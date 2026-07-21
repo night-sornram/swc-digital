@@ -25,6 +25,19 @@ physical clock until the screen is visually confirmed working.
 - The user visually confirmed orientation, colour, brightness, readability,
   and smoothness (no flicker, no full-screen redraw per second).
 
+## Verified reference state (2026-07-21, 3.1.0)
+
+- Device is paired with a single Mac via HTTP Digest; pairing key lives only
+  in macOS Keychain (service `com.night.swc-digital.device-<id>`).
+- Every protected route (`/`, `/api/*`, `/update`) requires Digest; only
+  `/api/identity` and the captive-portal probes are open.
+- A factory reset (or OTA from 3.0.x) boots the device into `SmallTV-Setup`
+  AP with a random 12-char password shown on screen; re-pair required.
+- The Mac service uses `wifi_usage_service.py run`; 401/403 pauses 15 min
+  (not the 5s network retry).
+- mDNS discovery selects the device by its stable Device ID (TXT `id`); if
+  two devices share an id the service fails closed (pushes nowhere).
+
 ## Verified reference state (2026-07-17)
 
 - Custom firmware is flashed and running on the physical clock.
@@ -185,6 +198,22 @@ The PlatformIO ESP8266 packaging tools emit Python invalid-escape
 `SyntaxWarning` messages during `elf2bin.py`; these are third-party tool warnings,
 not firmware build failures. Do not confuse them with compiler warnings from
 project code. Keep project code warning-free.
+
+## Rollout (3.1.0) — home procedure
+
+1. Stop the existing LaunchAgent (`launchctl unload ~/Library/LaunchAgents/com.night.swc-digital-wifi-usage.plist`).
+2. OTA the 3.1.0 firmware via the 3.0.x device's WebUI (Update tab).
+3. After the device reboots, confirm `/api/identity` (over the setup AP):
+   `curl http://192.168.4.1/api/identity`.
+4. Run `wifi_usage_service.py pair --url http://192.168.4.1` and save the pairkey.
+5. Update `tools/wifi-usage.toml` with the new `[device] id`, and the
+   LaunchAgent plist's ProgramArguments to `wifi_usage_service.py run`.
+6. Start the service: `launchctl load` the plist (or run `run` in the foreground).
+7. Confirm unauthorised curl gets 401; authorised browser/service gets 200.
+8. Simulate a friend's Mac: a wrong-key POST returns 401 and the on-screen
+   values are NOT overwritten.
+9. Move the device to a new IP / new Wi-Fi and confirm the service re-finds
+   it via mDNS by Device ID.
 
 ## Flashing rules
 
