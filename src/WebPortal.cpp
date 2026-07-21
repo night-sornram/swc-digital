@@ -37,11 +37,13 @@ static void sendJson(JsonDocument& doc, int code = 200) {
 }
 
 static void handleRoot() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   server.sendHeader("Cache-Control", "no-cache");
   server.send_P(200, "text/html", WEBUI_HTML);
 }
 
 static void handleGetConfig() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   JsonDocument doc;
   JsonObject root = doc.to<JsonObject>();
   settingsToJson(*S, root, /*includeSecrets=*/false);
@@ -115,6 +117,7 @@ static void handlePair() {
 }
 
 static void handleStatus() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   JsonDocument doc;
   JsonObject o = doc.to<JsonObject>();
   o["fw"] = FW_NAME;
@@ -170,6 +173,7 @@ static String netFingerprint(const Settings& s) {
 }
 
 static void handlePostConfig() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   if (!server.hasArg("plain")) { server.send(400, "text/plain", "no body"); return; }
 
   JsonDocument doc;
@@ -201,6 +205,7 @@ static void handlePostConfig() {
 }
 
 static void handleScan() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   int n = WiFi.scanNetworks();
   JsonDocument doc;
   JsonArray arr = doc.to<JsonArray>();
@@ -215,11 +220,13 @@ static void handleScan() {
 }
 
 static void handleReboot() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   server.send(200, "application/json", "{\"ok\":true}");
   scheduleReboot(400);
 }
 
 static void handleFactory() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   factoryReset(*S);
   saveSettings(*S);
   server.send(200, "application/json", "{\"ok\":true}");
@@ -229,6 +236,7 @@ static void handleFactory() {
 // Full settings backup: stream the persisted config.json verbatim. It includes
 // the WiFi passwords — same trust domain as typing them into this page.
 static void handleExport() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   File f = LittleFS.open("/config.json", "r");
   if (!f) { server.send(404, "text/plain", "no config saved yet"); return; }
   server.sendHeader("Content-Disposition", "attachment; filename=smalltv-config.json");
@@ -238,6 +246,7 @@ static void handleExport() {
 
 // Restore a backup: apply everything, persist, reboot (WiFi/hostname may change).
 static void handleImport() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   if (!server.hasArg("plain")) { server.send(400, "text/plain", "no body"); return; }
   JsonDocument doc;
   if (deserializeJson(doc, server.arg("plain"))) {
@@ -252,6 +261,7 @@ static void handleImport() {
 
 // Check the newest GitHub release against the running version.
 static void handleCheckUpdate() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   OtaLatest r = otaCheckLatest(*S);
   JsonDocument doc;
   JsonObject o = doc.to<JsonObject>();
@@ -266,6 +276,7 @@ static void handleCheckUpdate() {
 // Trigger the self-update. The actual (blocking) download runs from the loop so
 // this response returns first; on success the device reboots into the new image.
 static void handleSelfUpdate() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   g_selfUpdate = true;
   g_updateMsg = "starting...";
   server.send(200, "application/json", "{\"ok\":true}");
@@ -273,6 +284,7 @@ static void handleSelfUpdate() {
 
 // ---- OTA ------------------------------------------------------------------
 static void handleUpdateDone() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   bool ok = !Update.hasError();
   server.sendHeader("Connection", "close");
   server.send(ok ? 200 : 500, "text/plain", ok ? "OK" : platformUpdateError().c_str());
@@ -282,6 +294,13 @@ static void handleUpdateDone() {
 static void handleUpdateUpload() {
   HTTPUpload& up = server.upload();
   if (up.status == UPLOAD_FILE_START) {
+    // Auth-check BEFORE any flash write. If the request was not authorised,
+    // the handler `handleUpdateDone` never runs (it only runs at the end of a
+    // successful POST), so we must refuse here to avoid even a partial flash.
+    if (!g_security.authorize(server, netMode() == NET_AP)) {
+      Update.end();
+      return;
+    }
 #if defined(SMALLTV_ESP8266)
     WiFiUDP::stopAll();   // free UDP sockets so the OTA has max contiguous flash/heap
 #endif
