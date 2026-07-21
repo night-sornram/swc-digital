@@ -1,13 +1,30 @@
-# Claude session hand-off — Smart Weather Clock
+# Claude session hand-off — SWC Digital
 
 Read `AGENTS.md` and `USB_CLOCK.md` before editing, building, or flashing.
 They are the source of truth for hardware safety, recovery, and user commands.
 
 ## Current product
 
-This is a USB-only ESP8266 clock auto-detected through its CH340 USB bridge; it must never be
-given Wi-Fi credentials or cloud dependencies. It has six modes; the new Face
-mode is flashed, USB-verified, and visually confirmed on the physical display:
+This repository carries two firmware lines for the same SmallTV-ultra hardware:
+
+- **`smalltv_ultra`** (3.0.0) — Wi-Fi firmware that displays live Codex and
+  z.ai usage. Three modes: `CODEX`, `Z.AI`, `AUTO` (flips every 30 s). A Mac
+  service (`tools/wifi_usage_service.py`) polls `~/.codex/auth.json` and
+  `~/.claude/settings.json` every 60 s and pushes each provider to every
+  device on the LAN over `_aiusage._tcp` mDNS. After 180 s with no push, the
+  active provider shows STALE. The firmware stores NO provider token — only the
+  resulting percentages cross the LAN.
+- **`clock_usb`** — USB-only recovery / reference firmware for the same
+  hardware. No Wi-Fi, no cloud, configured over the onboard CH340 serial
+  bridge. It must never be given Wi-Fi credentials or cloud dependencies.
+
+The two lines are isolated behind their PlatformIO targets; do not confuse
+them. See `docs/superpowers/plans/` for the `smalltv_ultra` spec.
+
+### USB clock modes (`clock_usb`)
+
+The USB clock has six modes; the Face mode is flashed, USB-verified, and
+visually confirmed on the physical display:
 
 - **Face**: two cyan LED-style eyes on black with partial-region blink/look
   animation and Auto, Neutral, Happy, Focus, Curious, Sleepy, Alert, and
@@ -44,6 +61,18 @@ uploads use a checksum-verified temporary file before replacing a slot.
 
 ## Usage automation
 
+### Wi-Fi push (`smalltv_ultra`)
+
+`tools/wifi_usage_service.py` runs as a LaunchAgent
+(`tools/com.night.swc-digital-wifi-usage.plist.example`), polling Codex and
+z.ai every 60 s and pushing each provider to every SmallTV-ultra discovered on
+the LAN. Per-provider backoff on 429/5xx. Its private `tools/wifi-usage.toml`
+is Git-ignored. Never print OAuth tokens, account identifiers, Authorization
+headers, or full provider responses. Structured logs carry only provider name,
+timestamp, HTTP status, and error category.
+
+### USB collector (`clock_usb`)
+
 The private `tools/usage-collector.toml` and its state file are Git-ignored.
 Never print their contents, OAuth tokens, Keychain values, provider stderr, or
 account identifiers. The collector rotates one Claude account per five-minute
@@ -57,9 +86,11 @@ require the user's macOS login password; only the user should enter it.
 ## Safe device workflow
 
 1. Preserve the dirty worktree and each device's private stock backup.
-2. Build only `clock_usb` and run `git diff --check` plus `esptool image-info`.
+2. Build the target you intend to flash (`smalltv_ultra`, `smalltv_ultra_loader`,
+   or `clock_usb`) and run `git diff --check` plus `esptool image-info`.
 3. Before a flash, verify the SHA-256 of that device's private stock backup.
-4. Flash only at 115200, then verify the written-data hash and a USB response.
+4. Flash only at 115200, then verify the written-data hash and (for `clock_usb`)
+   a USB response.
 5. Ask the user to visually confirm every visual change. A passing build or
    serial response alone is not visual confirmation.
 
