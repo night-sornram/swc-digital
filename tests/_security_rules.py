@@ -29,3 +29,30 @@ def valid_identity(d: dict) -> bool:
     if d["mode"] not in ("ap", "sta"):
         return False
     return True
+
+import hashlib
+
+REALM = "swc-digital"
+USER  = "admin"
+
+def compute_h1(pairkey: str) -> str:
+    """Mirror of Security.cpp computeH1(). MD5(user:realm:pairkey) lowercase hex."""
+    return hashlib.md5(f"{USER}:{REALM}:{pairkey}".encode()).hexdigest()
+
+ROUTES = ["identity", "pair", "root", "config_get", "config_post",
+          "status", "scan", "export", "import", "reboot", "factory",
+          "checkupdate", "selfupdate", "update", "usage_get",
+          "usage_post", "captive_probe"]
+
+def route_status(device_state, mode, route, has_auth):
+    """Mirror of Plan 2 Task 5 logic. device_state in {unpaired,paired},
+    mode in {ap,sta}, has_auth in {True,False}."""
+    if route in ("identity", "captive_probe"):
+        return 200
+    if route == "pair":
+        if mode != "ap":                return 404
+        if device_state != "unpaired":  return 409
+        return 200
+    if device_state == "unpaired":      return 200
+    if has_auth:                        return 200
+    return 401
