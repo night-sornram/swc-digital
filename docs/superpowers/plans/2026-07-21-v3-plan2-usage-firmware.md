@@ -66,9 +66,12 @@ Expected: Plan 1 commits on top, `[SUCCESS]`, and `clean`. If any check fails, f
 Find the modes block (Plan 1 left `MODE_USAGE`/`MODE_CAROUSEL`/`DEFAULT_MODE`). Replace with:
 
 ```cpp
-// ---- Display modes (3.0.0) ------------------------------------------------
+// ---- UI modes (3.0.0) -----------------------------------------------------
 // Three UI modes for the usage display. AUTO rotates between CODEX and ZAI.
-enum DisplayMode : uint8_t {
+// Named `UiMode` (not `DisplayMode`) because `DisplayMode` is already the
+// polymorphic renderer base class in src/Mode.h. The MODE_* constants behave
+// the same either way; Settings::mode stays uint8_t.
+enum UiMode : uint8_t {
   MODE_CODEX = 0,
   MODE_ZAI   = 1,
   MODE_AUTO  = 2,
