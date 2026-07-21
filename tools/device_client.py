@@ -93,12 +93,29 @@ def build_opener(pairkey: str, base_url: str = "") -> urllib.request.OpenerDirec
     Basic is used (not Digest) because the ESP8266WebServer's Digest impl
     rotates the nonce per challenge, causing browsers to re-prompt every few
     minutes. Basic lets the browser cache credentials for the whole session.
-    The threat model (friend on the same Wi-Fi) is satisfied by either.
+
+    We add a handler that ALWAYS attaches the Authorization header on the
+    first request (rather than waiting for a 401 challenge). The device's
+    firmware does not send a proper WWW-Authenticate challenge, so urllib's
+    default lazy Basic handler would never learn to authenticate.
     """
-    pwd_mgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
-    uri = base_url if base_url else ""
-    pwd_mgr.add_password(None, uri, DIGEST_USERNAME, pairkey)
-    opener = urllib.request.build_opener(urllib.request.HTTPBasicAuthHandler(pwd_mgr))
+    import base64
+
+    class _AlwaysBasic(urllib.request.BaseHandler):
+        # urllib's default Basic handler runs at order 490; we run before it
+        # so the header is set unconditionally. BaseHandler default is 500.
+        handler_order = 100
+
+        def __init__(self, user, pw):
+            self._token = base64.b64encode(f"{user}:{pw}".encode()).decode()
+
+        def http_request(self, req):
+            req.add_unredirected_header("Authorization", "Basic " + self._token)
+            return req
+
+        https_request = http_request
+
+    opener = urllib.request.build_opener(_AlwaysBasic(DIGEST_USERNAME, pairkey))
     return opener
 
 
@@ -143,8 +160,13 @@ def pair(base_url: str, pairkey: str, timeout: float = 5.0) -> None:
 
 def push_usage(opener, base_url: str, body: dict, timeout: float = 8.0) -> int:
     """POST /api/usage with the provider body. Returns HTTP status. Does NOT
-    raise on HTTP errors (caller decides retry/backoff)."""
-    url = base_url.rstrip("/") + "/api/usage"
+    raise on HTTP errors (caller decides retry/backoff).
+
+    `base_url` may already end in /api/usage (mDNS TXT carries the full path)
+    or be just a host root (http://1.2.3.4). Append the path only if missing.
+    """
+    base = base_url.rstrip("/")
+    url = base if base.endswith("/api/usage") else base + "/api/usage"
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json"},
