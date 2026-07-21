@@ -42,8 +42,11 @@ def _read_settings() -> tuple[str, str]:
             cfg = json.load(handle)
     except (FileNotFoundError, json.JSONDecodeError, TypeError) as exc:
         raise ZaiAdapterError("z.ai settings unavailable") from exc
-    base = cfg.get("ANTHROPIC_BASE_URL") if isinstance(cfg, dict) else None
-    token = cfg.get("ANTHROPIC_AUTH_TOKEN") if isinstance(cfg, dict) else None
+    env = cfg.get("env") if isinstance(cfg, dict) else None
+    if not isinstance(env, dict):
+        env = cfg if isinstance(cfg, dict) else {}
+    base = env.get("ANTHROPIC_BASE_URL")
+    token = env.get("ANTHROPIC_AUTH_TOKEN")
     if not isinstance(base, str) or not isinstance(token, str) or not token:
         raise ZaiAdapterError("z.ai base url or token missing")
     # Enforce host allowlist. base may include scheme + path; verify host only.
@@ -95,7 +98,7 @@ def fetch() -> dict:
     url = f"https://{ALLOWED_HOST}{QUOTA_PATH}"   # always https + allowed host
     req = urllib.request.Request(
         url,
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": token},
     )
     try:
         with urllib.request.urlopen(req, timeout=20) as response:

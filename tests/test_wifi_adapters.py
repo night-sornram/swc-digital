@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -12,6 +13,7 @@ sys.path.insert(0, str(TOOLS))
 
 import codex_wifi_adapter
 import zai_wifi_adapter
+import wifi_usage_service
 import _wifi_adapter_fixtures as F
 
 
@@ -91,6 +93,32 @@ class ZaiAdapterTests(unittest.TestCase):
         self.assertEqual(out["five_hour"]["reset_min"], 0)   # expired clamped
         self.assertEqual(out["weekly"]["used_pct"], 100)
 
+    def test_sends_configured_authorization_value_verbatim(self):
+        captured = {}
+
+        def _capture(req, timeout=None):
+            captured["authorization"] = req.get_header("Authorization")
+            return _make_fake_urlopen(F.ZAI_EMPTY)(req, timeout)
+
+        with self._patch_fetch(F.ZAI_EMPTY), \
+             mock.patch.object(zai_wifi_adapter.urllib.request, "urlopen", _capture):
+            zai_wifi_adapter.fetch()
+        self.assertEqual(captured["authorization"], "dummy")
+
+
+class ZaiSettingsTests(unittest.TestCase):
+    def test_reads_credentials_from_claude_env_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Path(tmp) / "settings.json"
+            settings.write_text(json.dumps({"env": {
+                "ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic",
+                "ANTHROPIC_AUTH_TOKEN": "secret-token",
+            }}))
+            with mock.patch.object(zai_wifi_adapter, "SETTINGS_PATH", settings):
+                base, token = zai_wifi_adapter._read_settings()
+        self.assertEqual(base, "https://api.z.ai/api/anthropic")
+        self.assertEqual(token, "secret-token")
+
 
 class ErrorHandlingTests(unittest.TestCase):
     def test_codex_401_raises(self):
@@ -159,6 +187,24 @@ class DiscoveryFallbackTests(unittest.TestCase):
                                              "http://1.2.3.4/api/usage"]):   # dup of explicit
             urls = aiusage_mdns.all_targets(["http://1.2.3.4/api/usage"], mdns_timeout=0)
         self.assertEqual(urls, ["http://1.2.3.4/api/usage", "http://5.6.7.8/api/usage"])
+
+
+class ServiceCliTests(unittest.TestCase):
+    def test_once_runs_one_cycle_without_sleeping(self):
+        cfg = {"service": {
+            "interval_seconds": 60,
+            "mdns_timeout_seconds": 0,
+            "urls": ["http://1.2.3.4/api/usage"],
+        }}
+        with mock.patch.object(wifi_usage_service, "_load_config", return_value=cfg), \
+             mock.patch.object(wifi_usage_service.aiusage_mdns, "all_targets",
+                               return_value=["http://1.2.3.4/api/usage"]), \
+             mock.patch.object(wifi_usage_service, "_step_provider", return_value=60) as step, \
+             mock.patch.object(wifi_usage_service.time, "sleep") as sleep:
+            status = wifi_usage_service.main(["--once"])
+        self.assertEqual(status, 0)
+        self.assertEqual(step.call_count, 2)
+        sleep.assert_not_called()
 
 
 if __name__ == "__main__":

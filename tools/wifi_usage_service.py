@@ -18,18 +18,23 @@ LaunchAgent: com.night.swc-digital-wifi-usage (see the plist example).
 """
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import os
 import sys
 import time
-import tomllib
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.9/3.10 used by some LaunchAgent environments.
+    import tomli as tomllib
 
 # Import siblings (same dir). Run as a script, so add tools/ to sys.path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -153,8 +158,27 @@ def _step_provider(state: ProviderState, targets: list[str], interval_s: int) ->
     return interval_s
 
 
-def main() -> int:
-    cfg = _load_config(CONFIG_PATH)
+def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Push Codex and z.ai usage to a SmallTV-ultra display.",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=CONFIG_PATH,
+        help=f"private TOML config (default: {CONFIG_PATH})",
+    )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="run one discovery/fetch/push cycle, then exit",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    args = _parse_args(argv)
+    cfg = _load_config(args.config.expanduser())
     svc = cfg.get("service", {})
     interval_s = int(svc.get("interval_seconds", 60))
     mdns_timeout = float(svc.get("mdns_timeout_seconds", 2.0))
@@ -175,6 +199,8 @@ def main() -> int:
         targets = aiusage_mdns.all_targets(explicit_urls, mdns_timeout=mdns_timeout)
         if not targets:
             log.warning("event=no_targets at=%s", _iso())
+            if args.once:
+                return 2
             time.sleep(interval_s)
             continue
 
@@ -182,6 +208,8 @@ def main() -> int:
         # We service them sequentially (the work is I/O bound and light).
         sleep_codex = _step_provider(codex_state, targets, interval_s)
         sleep_zai   = _step_provider(zai_state,   targets, interval_s)
+        if args.once:
+            return 0
         sleep_s = min(sleep_codex, sleep_zai)
         if sleep_s > 0:
             time.sleep(sleep_s)

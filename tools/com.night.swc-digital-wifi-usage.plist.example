@@ -11,6 +11,8 @@
     <string>run</string>
     <string>--with</string>
     <string>zeroconf</string>
+    <string>--with</string>
+    <string>tomli</string>
     <string>REPLACE_WITH_ABSOLUTE_PATH_TO_REPOSITORY/tools/wifi_usage_service.py</string>
   </array>
   <key>EnvironmentVariables</key>
