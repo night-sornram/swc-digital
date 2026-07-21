@@ -41,7 +41,12 @@ def fetch() -> dict:
         disk_path = "/System/Volumes/Data"
         if not os.path.exists(disk_path):
             disk_path = "/"
-        ssd = int(round(psutil.disk_usage(disk_path).percent))
+        du = psutil.disk_usage(disk_path)
+        # psutil.percent uses used/(used+free) which over-reports vs Finder
+        # (Finder = used/total, where used excludes APFS snapshots/clones).
+        # Use used/total for consistency with what the user sees in Finder
+        # and About This Mac > Storage.
+        ssd = int(round(du.used / du.total * 100))
     except Exception as exc:  # noqa: BLE001 — surface any failure to caller
         raise SystemStatsError(f"psutil read failed: {exc}") from exc
 
