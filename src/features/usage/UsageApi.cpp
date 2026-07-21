@@ -35,6 +35,8 @@ static void handleUsagePost() {
   if (strcasecmp(tok, "codex") == 0)         p = PROVIDER_CODEX;
   else if (strcasecmp(tok, "zai") == 0)      p = PROVIDER_ZAI;
   else if (strcasecmp(tok, "system") == 0)   p = PROVIDER_SYSTEM;
+  else if (strcasecmp(tok, "vitals") == 0)   p = PROVIDER_VITALS;
+  else if (strcasecmp(tok, "weather") == 0)  p = PROVIDER_WEATHER;
   else {
     s_server->send(400, "application/json", "{\"ok\":false,\"error\":\"bad provider\"}");
     return;
