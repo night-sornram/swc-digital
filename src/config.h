@@ -10,7 +10,7 @@
 // Firmware identity
 // ---------------------------------------------------------------------------
 #define FW_NAME      "swc-digital"
-#define FW_VERSION   "3.0.0"
+#define FW_VERSION   "3.0.1"
 #define REPO_OWNER   "night-sornram"
 #define REPO_NAME    "swc-digital"
 #define UPDATE_ASSET "swc-digital-smalltv-ultra.bin"
