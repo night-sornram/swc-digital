@@ -383,25 +383,25 @@ void UsageMode::service(const Settings& s) {
       int16_t tw = gfxTextW(pill, 2);
       d->setCursor(232 - tw, 10);
       d->print(pill);
-      // CPU hero card (full width).
-      drawVitalsCard(8,   42,  "CPU",  pu.fiveHour.usedPct, pu.fiveHour.available, false, providerColor, stale);
-      // RAM + DISK side by side.
-      drawVitalsCard(8,   118, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
+      // CPU hero card (full width, 224px).
+      drawSystemCard(42,  "CPU", pu.fiveHour.usedPct, pu.fiveHour.available, providerColor, stale);
+      // RAM + DISK side by side (half width).
+      drawVitalsCard(8,   98, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
       bool ssdAvail = (pu.extraPct != 0xFF);
-      drawVitalsCard(124, 118, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
+      drawVitalsCard(124, 98, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
       // Banner: battery + uptime.
-      drawVitalsBanner(194, pu.batteryPct, pu.uptimeMin, stale);
+      drawVitalsBanner(174, pu.batteryPct, pu.uptimeMin, stale);
       lastFiveHourOk_[active_] = pu.lastOkMs;
       lastStale_[active_]      = stale;
       return;
     }
     // Partial: data changed → repaint cards + banner.
     if (pu.lastOkMs != lastFiveHourOk_[active_] || stale != lastStale_[active_]) {
-      drawVitalsCard(8,   42,  "CPU",  pu.fiveHour.usedPct, pu.fiveHour.available, false, providerColor, stale);
-      drawVitalsCard(8,   118, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
+      drawSystemCard(42,  "CPU", pu.fiveHour.usedPct, pu.fiveHour.available, providerColor, stale);
+      drawVitalsCard(8,   98, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
       bool ssdAvail = (pu.extraPct != 0xFF);
-      drawVitalsCard(124, 118, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
-      drawVitalsBanner(194, pu.batteryPct, pu.uptimeMin, stale);
+      drawVitalsCard(124, 98, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
+      drawVitalsBanner(174, pu.batteryPct, pu.uptimeMin, stale);
       lastFiveHourOk_[active_] = pu.lastOkMs;
       lastStale_[active_]      = stale;
     }
@@ -476,12 +476,12 @@ void UsageMode::service(const Settings& s) {
         d->print(DOWS[dow]);
       }
       d->setTextColor(USAGE_COLOR_MUTED);
-      d->setTextSize(1);
+      d->setTextSize(2);
       char db[24];
       snprintf(db, sizeof(db), "%d %s %d", dd,
                (mon>=1&&mon<=12)?MONS[mon-1]:"---", yr);
-      int16_t dw2 = gfxTextW(db, 1);
-      d->setCursor((240 - dw2) / 2, 114);
+      int16_t dw2 = gfxTextW(db, 2);
+      d->setCursor((240 - dw2) / 2, 116);
       d->print(db);
       lastClockMin_ = (uint8_t)mm;
     } else if (!synced && lastClockMin_ != 0xFE) {
@@ -506,10 +506,10 @@ void UsageMode::service(const Settings& s) {
         drawWeatherIcon(36, 164, pu.weatherCode, providerColor);
       // Temp + condition (right of icon).
       d->setTextColor(providerColor);
-      d->setTextSize(3);
+      d->setTextSize(4);
       char tb[8];
       snprintf(tb, sizeof(tb), "%u", pu.fiveHour.usedPct);
-      d->setCursor(60, 140);
+      d->setCursor(60, 136);
       d->print(tb);
       d->setTextSize(2);
       d->print("C");
