@@ -63,12 +63,50 @@ logs tokens, headers, or full responses.
 
 Install as a LaunchAgent using `tools/com.night.swc-digital-wifi-usage.plist.example`.
 
+## Pairing (3.1+)
+
+Every SmallTV-ultra is locked to one Mac + one browser/phone. The first time:
+
+1. The device boots into a `SmallTV-Setup` Wi-Fi AP with a random 12-char
+   password shown on its physical screen.
+2. Join that Wi-Fi on your Mac.
+3. On the Mac:
+   ```sh
+   uv run --no-project python tools/wifi_usage_service.py pair --url http://192.168.4.1
+   ```
+   The command prints a 16-character pairkey **once**. Save it in your
+   password manager — it is stored in macOS Keychain, not in any file.
+4. Open `http://192.168.4.1/` in a browser. The browser prompts for a
+   username + password. Use `admin` + the pairkey.
+5. Configure your home Wi-Fi in the WebUI. The device reboots into STA mode.
+
+## Recovery (after Wi-Fi change or lost key)
+
+1. Factory-reset the device (hold the reset pin 10 s, or use the WebUI's
+   Factory Reset button while still paired). It boots into `SmallTV-Setup`
+   with a fresh random AP password.
+2. Join the AP, then:
+   ```sh
+   uv run --no-project python tools/wifi_usage_service.py recover --url http://192.168.4.1
+   ```
+   `recover` is identical to `pair` (it generates a new key + pairs) but
+   documents that you are replacing a lost/old pairing. The old pairkey in
+   Keychain is overwritten.
+
+## Migration from 3.0.x
+
+OTA a 3.1 image onto a 3.0.x device. The device will boot into the
+`SmallTV-Setup` AP (the schema v4 migration forces a re-pair — your 3.0.x
+config is preserved, but the device no longer trusts the old unauthenticated
+connection). Re-run the Pairing steps above. Your Wi-Fi credentials, display
+settings, and usage history are kept.
+
 ## USB clock (`clock_usb`)
 
 See `USB_CLOCK.md` for the full build / flash / restore / CLI guide. The USB
 clock is a separate firmware line and does not share the Wi-Fi usage code.
 
-## Recovery
+## Recovery (stock flash backup)
 
 Before first flashing a device, make a 4 MB stock-flash backup and store it
 outside the repo. Never commit it — it may contain saved Wi-Fi credentials.
