@@ -29,10 +29,12 @@ def fetch() -> dict:
         raise SystemStatsError("psutil not installed") from exc
 
     try:
-        # CPU: sample over 1.5s for a stable reading (0.5s often returns 0%
-        # on an idle Mac). The brief block is fine — the service polls
-        # every 60s.
-        cpu = int(round(psutil.cpu_percent(interval=1.5)))
+        # CPU: 3 samples × 0.5s, then average. psutil.cpu_percent already
+        # returns user+system (NOT idle), so the value is "busy CPU".
+        # Averaging 3 samples smooths out spikes (a 1.5s snapshot could
+        # catch the Mac at 100% during a build, which is real but noisy).
+        samples = [psutil.cpu_percent(interval=0.5) for _ in range(3)]
+        cpu = int(round(sum(samples) / len(samples)))
         # RAM: psutil.virtual_memory().percent ≈ Activity Monitor (uses
         # active+wired+compressed, not inactive). Matches within ~2%.
         ram = int(round(psutil.virtual_memory().percent))
