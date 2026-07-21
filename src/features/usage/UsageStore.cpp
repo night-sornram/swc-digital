@@ -14,6 +14,7 @@ void UsageStore::begin() {
     data_[i].weekly.resetMin     = 0xFFFF;
     data_[i].everReceived        = false;
     data_[i].lastOkMs            = 0;
+    data_[i].extraPct            = 0xFF;
   }
 }
 
@@ -58,7 +59,8 @@ bool UsageStore::applyPush(UsageProvider p, const String& json) {
   // Validate provider token matches the route's provider.
   if (root["provider"].is<const char*>()) {
     const char* tok = root["provider"];
-    const char* want = (p == PROVIDER_CODEX) ? "codex" : "zai";
+    static const char* const NAMES[PROVIDER_COUNT] = { "codex", "zai", "system" };
+    const char* want = NAMES[p];
     if (strcasecmp(tok, want) != 0) return false;
   } else {
     return false;   // provider is required
@@ -70,12 +72,22 @@ bool UsageStore::applyPush(UsageProvider p, const String& json) {
   next.weekly.available   = false;
   next.fiveHour.resetMin  = 0xFFFF;
   next.weekly.resetMin    = 0xFFFF;
+  next.extraPct           = 0xFF;   // SYSTEM-only; AI providers never set it
 
   bool sawPct = false;
   if (!parseWindow(root, "five_hour_used_pct", "five_hour_reset_min",
                    next.fiveHour, sawPct)) return false;
   if (!parseWindow(root, "weekly_used_pct", "weekly_reset_min",
                    next.weekly, sawPct)) return false;
+  // Optional third metric (SYSTEM SSD). Validated like the others.
+  JsonVariantConst extra = root["extra_pct"];
+  if (!extra.isNull()) {
+    if (!extra.is<int>()) return false;
+    int v = extra.as<int>();
+    if (v < 0 || v > 100) return false;
+    next.extraPct = (uint8_t)v;
+    sawPct = true;   // counts as "at least one metric landed"
+  }
   if (!sawPct) return false;   // must have at least one window with a percentage
 
   // Commit.
@@ -102,7 +114,7 @@ void UsageStore::serializeOverview(String& out) const {
   JsonDocument doc;
   JsonObject root = doc.to<JsonObject>();
   root["schema"] = 1;
-  static const char* NAMES[PROVIDER_COUNT] = { "codex", "zai" };
+  static const char* NAMES[PROVIDER_COUNT] = { "codex", "zai", "system" };
   JsonArray arr = root["providers"].to<JsonArray>();
   for (uint8_t i = 0; i < PROVIDER_COUNT; i++) {
     JsonObject po = arr.add<JsonObject>();
@@ -123,13 +135,24 @@ void UsageStore::serializeOverview(String& out) const {
       wk["reset_min"]  = (data_[i].weekly.resetMin == 0xFFFF)
                            ? -1 : (int32_t)data_[i].weekly.resetMin;
     }
+    if (data_[i].extraPct != 0xFF) po["extra_pct"] = data_[i].extraPct;
   }
   serializeJson(doc, out);
 }
 
 uint16_t usageProviderColor(UsageProvider p) {
-  return (p == PROVIDER_CODEX) ? USAGE_COLOR_CODEX : USAGE_COLOR_ZAI;
+  switch (p) {
+    case PROVIDER_CODEX:  return USAGE_COLOR_CODEX;
+    case PROVIDER_ZAI:    return USAGE_COLOR_ZAI;
+    case PROVIDER_SYSTEM: return USAGE_COLOR_TEXT;   // neutral white-ish
+    default:              return USAGE_COLOR_TEXT;
+  }
 }
 const char* usageProviderLabel(UsageProvider p) {
-  return (p == PROVIDER_CODEX) ? "CODEX" : "Z.AI";
+  switch (p) {
+    case PROVIDER_CODEX:  return "CODEX";
+    case PROVIDER_ZAI:    return "Z.AI";
+    case PROVIDER_SYSTEM: return "SYSTEM";
+    default:              return "?";
+  }
 }

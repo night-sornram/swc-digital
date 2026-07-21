@@ -32,8 +32,9 @@ static void handleUsagePost() {
   }
   const char* tok = doc["provider"] | "";
   UsageProvider p;
-  if (strcasecmp(tok, "codex") == 0)      p = PROVIDER_CODEX;
-  else if (strcasecmp(tok, "zai") == 0)   p = PROVIDER_ZAI;
+  if (strcasecmp(tok, "codex") == 0)         p = PROVIDER_CODEX;
+  else if (strcasecmp(tok, "zai") == 0)      p = PROVIDER_ZAI;
+  else if (strcasecmp(tok, "system") == 0)   p = PROVIDER_SYSTEM;
   else {
     s_server->send(400, "application/json", "{\"ok\":false,\"error\":\"bad provider\"}");
     return;

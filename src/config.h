@@ -44,9 +44,10 @@
 // Named UiMode to avoid clashing with the DisplayMode renderer base class in
 // Mode.h (that class stays the polymorphic render interface used by main.cpp).
 enum UiMode : uint8_t {
-  MODE_CODEX = 0,
-  MODE_ZAI   = 1,
-  MODE_AUTO  = 2,
+  MODE_CODEX  = 0,
+  MODE_ZAI    = 1,
+  MODE_AUTO   = 2,
+  MODE_SYSTEM = 3,
 };
 #define DEFAULT_MODE  MODE_AUTO
 
