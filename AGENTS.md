@@ -11,6 +11,40 @@ hardware: the Wi-Fi usage display (`smalltv_ultra`) and the USB-only clock
 `docs/superpowers/plans/`. The user wants changes tested on the connected
 physical clock until the screen is visually confirmed working.
 
+## Reference state (2026-07-22, 3.3.0)
+
+- Two new display modes added: **Vitals (Mac)** and **Weather + Clock**,
+  selectable from the WebUI dropdown like the existing CODEX/ZAI/SYSTEM/AUTO.
+- Vitals screen is a Grid 2×3: CPU / RAM / SSD / TEMP (2×2 cards) + a
+  Battery+Uptime banner. Data from psutil via `tools/vitals_adapter.py`.
+  Mac temperature is unavailable on Apple Silicon (psutil has no
+  `sensors_temperatures`); TEMP shows `--`.
+- Weather screen shows a Clock hero (HH:MM + date from device NTP), a
+  weather+AQI block (temp, WMO condition label, european AQI index, PM2.5),
+  and a mini week-strip calendar with today highlighted. Data from
+  open-meteo + open-meteo Air Quality via `tools/weather_adapter.py` (free,
+  no API key). Location (lat/lon) is in `wifi-usage.toml [weather]`; the
+  device title-bar label is `settings.weather.city` (default `BKK`).
+- Architecture: VITALS and WEATHER are providers 4 & 5 in the existing
+  `UsageProvider` model — they reuse `POST /api/usage`, strict validation,
+  dirty-tracking, and stale handling. No new API routes.
+- Push cadence: vitals every 60 s (same loop as codex/zai/system); weather
+  every 600 s (throttled via a closure that returns `None` on skip).
+- The Python validation mirror (`tests/_usage_store_rules.py`) is the source
+  of truth for `UsageStore.cpp` validation. It now covers all 5 routes and
+  the new optional fields (temp_c, battery_pct, uptime_min, weather_code,
+  aqi_pm25, temp_min, temp_max). `temp_max` is validated -127..127 then
+  clamped to 0..100 for `uint8_t` storage (Bangkok highs are always positive).
+- Schema bumped 4→5; migration is additive (missing `weather` slice →
+  Bangkok defaults).
+- Firmware size ~612 KB (was ~591 KB); Flash 58.1%, RAM 50.1%.
+- Data-layer verified on device: `POST /api/usage` with `provider:vitals`
+  and `provider:weather` both return `{"ok":true}` and the GET overview
+  shows the new fields stored correctly. **Visual confirmation of the two
+  new screens is pending** (temp glyph fallback `54c`, calendar negative-day
+  edge case at month start, and clock-tick partial-redraw should be checked
+  at the screen on first opportunity).
+
 ## Verified reference state (2026-07-21, 3.0.0)
 
 - `smalltv_ultra` Wi-Fi firmware is flashed and running on the physical clock.
