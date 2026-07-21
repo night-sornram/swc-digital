@@ -336,12 +336,20 @@ function scan(){$('scanList').innerHTML='<div class="muted">Scanning...</div>';
 function loadIdentity(){
  return j('/api/identity').then(function(i){
   var ph = $('pairHint'); if (!ph) return;
-  ph.style.display = i.paired ? 'none' : 'block';
-  if (!i.paired) {
-   // Identity does NOT carry ssid/ip (those are in /api/status, which is
-   // Digest-gated). The hint tells the user where to look instead.
-   if ($('pairUrl')) $('pairUrl').textContent = 'http://' + location.host + '/';
-  }
+  // Show banner only if device reports unpaired AND we have no cached
+  // browser credentials that work. If the browser already has valid Basic
+  // credentials cached, /api/status below will succeed and hide the banner
+  // (paired flag can transiently flicker false during auto-unpair recovery).
+  if (i.paired) { ph.style.display = 'none'; return; }
+  // Device says unpaired. Probe /api/status: if it returns 200, the browser
+  // has working credentials → device is actually paired (identity lied) →
+  // hide the banner.
+  fetch('/api/status', {cache:'no-store'}).then(function(r){
+   ph.style.display = (r.status === 200) ? 'none' : 'block';
+   if (ph.style.display === 'block' && $('pairUrl')) {
+    $('pairUrl').textContent = 'http://' + location.host + '/';
+   }
+  }).catch(function(){ ph.style.display = 'block'; });
  }).catch(function(){});
 }
 

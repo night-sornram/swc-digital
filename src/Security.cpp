@@ -11,10 +11,12 @@ Security g_security;
 const char* SECURITY_REALM = "swc-digital";
 const char* SECURITY_USER  = "admin";
 
-// Auto-unpair threshold: 10 consecutive failed Basic auth attempts. A bug
-// like the v3.1.2 MD5 mismatch would hit this within ~30 s of Mac service
-// polling — the device recovers itself rather than locking out permanently.
-const uint16_t SECURITY_AUTO_UNPAIR_AFTER = 10;
+// Auto-unpair threshold: 30 consecutive failed Basic auth attempts (throttled
+// to 1/sec, so ~30 min worst case). Low enough that a firmware auth bug
+// trips it within an hour of Mac service polling; high enough that a brief
+// network glitch or Mac sleep does NOT auto-unpair the device (which would
+// force the user to re-pair and re-cache the browser credentials).
+const uint16_t SECURITY_AUTO_UNPAIR_AFTER = 30;
 
 void Security::begin() {
   // 32-bit chip id -> 8 hex chars. Stable across reboots, IPs, networks.
