@@ -188,7 +188,7 @@ def cmd_run(args) -> int:
             except device_client.DeviceError:
                 log.error("event=no_pairkey device=%s hint=run 'pair'", target_id)
                 return None
-            opener_cache[target_id] = device_client.build_opener(pairkey)
+            opener_cache[target_id] = device_client.build_opener(pairkey, url)
         return opener_cache[target_id]
 
     while True:
