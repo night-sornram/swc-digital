@@ -55,6 +55,19 @@ class Security {
   // means callers can pass either name.
   bool authorize(ESP8266WebServer& server, bool recovery) const;
 
+  // Clear pairing state (pairkey + flag). Called by /api/factory and by the
+  // serial recovery interface. Persists via Settings (caller passes the H1
+  // clear via Settings, then reboots). This method only updates state.
+  void clearPairing();
+
+  // Auth-outcome bookkeeping for the lockout-recovery rule. The device
+  // auto-clears pairing after N consecutive failed auth attempts, so a
+  // firmware auth bug can never permanently lock out the device — the user
+  // just has to wait or power-cycle. See SECURITY_AUTO_UNPAIR_AFTER.
+  void noteAuthOutcome(bool ok);
+  bool autoUnpairTriggered() const;
+  void clearAutoUnpairFlag();
+
   // Build the /api/identity JSON body (no secrets, no credentials).
   void serializeIdentity(String& out) const;
 
@@ -63,6 +76,10 @@ class Security {
   bool   paired_      = false;
   String h1_;                  // MD5 hex, or empty
   bool   recoveryOpen_ = false;
+  // Consecutive failed-auth counter (resets on success). Auto-unpair when it
+  // crosses SECURITY_AUTO_UNPAIR_AFTER.
+  uint16_t authFailStreak_ = 0;
+  bool     autoUnpairTriggered_ = false;
 };
 
 extern Security g_security;

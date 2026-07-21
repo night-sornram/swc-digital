@@ -11,6 +11,11 @@ Security g_security;
 const char* SECURITY_REALM = "swc-digital";
 const char* SECURITY_USER  = "admin";
 
+// Auto-unpair threshold: 10 consecutive failed Basic auth attempts. A bug
+// like the v3.1.2 MD5 mismatch would hit this within ~30 s of Mac service
+// polling — the device recovers itself rather than locking out permanently.
+const uint16_t SECURITY_AUTO_UNPAIR_AFTER = 10;
+
 void Security::begin() {
   // 32-bit chip id -> 8 hex chars. Stable across reboots, IPs, networks.
   uint32_t id = platformChipId();
@@ -108,12 +113,45 @@ bool Security::authorize(ESP8266WebServer& server, bool recovery) const {
   // Constant-time compare.
   uint8_t diff = 0;
   for (uint8_t i = 0; i < 32; i++) diff |= (uint8_t)got[i] ^ (uint8_t)h1_[i];
-  if (diff != 0) {
+  bool ok = (diff == 0);
+  const_cast<Security*>(this)->noteAuthOutcome(ok);
+  if (!ok) {
     server.requestAuthentication(BASIC_AUTH, SECURITY_REALM);
     return false;
   }
   return true;
 }
+
+void Security::clearPairing() {
+  h1_     = "";
+  paired_ = false;
+  authFailStreak_      = 0;
+  autoUnpairTriggered_ = false;
+}
+
+void Security::noteAuthOutcome(bool ok) {
+  if (ok) {
+    authFailStreak_ = 0;
+    return;
+  }
+  // Throttle: only count one failure per second so a busy Mac service loop
+  // doesn't trip the counter instantly. millis() granularity is fine.
+  static uint32_t lastFail = 0;
+  uint32_t now = millis();
+  if (now - lastFail < 1000) return;
+  lastFail = now;
+  if (authFailStreak_ < 65535) authFailStreak_++;
+  if (authFailStreak_ >= SECURITY_AUTO_UNPAIR_AFTER) {
+    // Self-recovery: a firmware bug that rejects every credential should
+    // never lock the owner out of the device. Clear pairing state; main.cpp
+    // persists + reboots on the next loop tick.
+    clearPairing();
+    autoUnpairTriggered_ = true;
+  }
+}
+
+bool Security::autoUnpairTriggered() const { return autoUnpairTriggered_; }
+void Security::clearAutoUnpairFlag()       { autoUnpairTriggered_ = false; }
 
 void Security::serializeIdentity(String& out) const {
   JsonDocument doc;

@@ -182,6 +182,44 @@ void loop() {
   netLoop();
   webPortalLoop();
 
+  // Serial recovery: type "FACTORY RESET" over USB to clear pairing and
+  // reboot unpaired. Last-resort escape hatch when a firmware auth bug
+  // locks out WebUI (the v3.1.2 incident). The CH340 bridge is always
+  // present on SmallTV-ultra hardware, so this works even when Wi-Fi auth
+  // is broken — only USB + a terminal is needed.
+  if (Serial.available() >= 13) {
+    static char buf[32];
+    static uint8_t n = 0;
+    while (Serial.available() && n < sizeof(buf) - 1) {
+      buf[n++] = Serial.read();
+    }
+    buf[n] = 0;
+    // Slide window looking for the command (case-insensitive).
+    String s = String(buf);
+    s.toUpperCase();
+    if (s.indexOf("FACTORY RESET") >= 0) {
+      Serial.println(F("[recovery] clearing pairing + rebooting"));
+      g_settings.pairedH1 = "";
+      saveSettings(g_settings);
+      g_security.clearPairing();
+      delay(200);
+      ESP.restart();
+    }
+    n = 0;  // reset buffer each loop iteration that found input
+  }
+
+  // Auto-unpair: if authorize() saw N consecutive failed Basic auth attempts
+  // (firmware bug / wrong key streak), clear pairing and reboot. Persists
+  // so the device boots unpaired the next time.
+  if (g_security.autoUnpairTriggered()) {
+    Serial.println(F("[recovery] auto-unpair triggered by auth-fail streak"));
+    g_settings.pairedH1 = "";
+    saveSettings(g_settings);
+    g_security.clearAutoUnpairFlag();
+    delay(200);
+    ESP.restart();
+  }
+
   if (webPortalRebootDue()) {
     delay(120);
     ESP.restart();
