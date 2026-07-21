@@ -31,8 +31,16 @@ def fetch() -> dict:
     try:
         cpu = int(round(psutil.cpu_percent(interval=0.5)))
         ram = int(round(psutil.virtual_memory().percent))
-        # Root filesystem usage as the SSD metric.
-        ssd = int(round(psutil.disk_usage("/").percent))
+        # macOS splits the SSD into a read-only system volume (/) and a data
+        # volume (/System/Volumes/Data) since Catalina. psutil.disk_usage('/')
+        # only sees the system volume (tiny, ~7%). Use the data volume when
+        # it exists so the percentage matches what Finder/About-This-Mac show.
+        # Linux/other: just use '/'.
+        disk_path = "/System/Volumes/Data"
+        import os
+        if not os.path.ismount(disk_path):
+            disk_path = "/"
+        ssd = int(round(psutil.disk_usage(disk_path).percent))
     except Exception as exc:  # noqa: BLE001 — surface any failure to caller
         raise SystemStatsError(f"psutil read failed: {exc}") from exc
 
