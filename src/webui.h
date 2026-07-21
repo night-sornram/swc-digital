@@ -119,8 +119,14 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
     <option value="system">System (CPU/RAM/Storage)</option>
     <option value="auto">Auto (rotate)</option>
    </select>
-   <label>Auto rotation seconds (5&ndash;3600)</label>
-   <input id="usage-rotate" type="number" min="5" max="3600" step="1">
+   <label>Default rotation seconds (2&ndash;3600, used when per-screen is 0)</label>
+   <input id="usage-rotate" type="number" min="2" max="3600" step="1">
+   <div class="row" style="margin-top:8px">
+    <div><label>Codex (s)</label><input id="usage-codex-sec" type="number" min="0" max="3600" step="1"></div>
+    <div><label>Z.ai (s)</label><input id="usage-zai-sec" type="number" min="0" max="3600" step="1"></div>
+    <div><label>System (s)</label><input id="usage-system-sec" type="number" min="0" max="3600" step="1"></div>
+   </div>
+   <small class="hint">0 = use default. Example: Codex 3, Z.ai 3, System 5.</small>
   </div>
   <div class="card"><h2>Clock &amp; night mode</h2>
    <label>Timezone</label>
@@ -135,23 +141,9 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
    <input id="nightLevel" type="range" min="0" max="100" oninput="nlVal.textContent=this.value">
    <small class="hint">Needs internet once to set the clock over NTP (no on-screen clock, this just drives the schedule). While the window is active it overrides the brightness and auto-brightness above. Times are local to the selected timezone; DST is handled automatically. After a reboot the schedule resumes once the clock re-syncs, so the screen may show normal brightness for a few seconds.</small>
   </div>
-  <div class="card"><h2>Codex</h2>
-   <div id="usage-codex" class="usage-grid">
-    <div><span>5H</span><b id="codex-5h">N/A</b><span id="codex-5h-reset" class="muted">RESET --</span></div>
-    <div><span>Weekly</span><b id="codex-wk">N/A</b><span id="codex-wk-reset" class="muted">RESET --</span></div>
-    <div><span>Age</span><b id="codex-age">--</b><span id="codex-state" class="muted">--</span></div>
-   </div>
-  </div>
-  <div class="card"><h2>Z.ai</h2>
-   <div id="usage-zai" class="usage-grid">
-    <div><span>5H</span><b id="zai-5h">N/A</b><span id="zai-5h-reset" class="muted">RESET --</span></div>
-    <div><span>Weekly</span><b id="zai-wk">N/A</b><span id="zai-wk-reset" class="muted">RESET --</span></div>
-    <div><span>Age</span><b id="zai-age">--</b><span id="zai-state" class="muted">--</span></div>
-   </div>
-  </div>
   <div class="card">
    <button class="btn sec" id="usage-refresh" type="button">Refresh status</button>
-   <small class="hint">Refresh only reads the device state. It does NOT trigger a provider API call.</small>
+   <small class="hint">Refresh reads live data from the device. Status tab shows full details.</small>
   </div>
  </section>
 
@@ -266,10 +258,13 @@ function loadConfig(){return j('/api/config').then(function(c){C=c;
  sv('nightStart',ck.nightStart||'22:00'); sv('nightEnd',ck.nightEnd||'07:00');
  sv('nightLevel',ck.nightLevel!=null?ck.nightLevel:0); $('nlVal')&&($('nlVal').textContent=(ck.nightLevel!=null?ck.nightLevel:0));
  var ap=$('apPass'); if(ap)ap.placeholder=c.apPassSet?'(unchanged)':'(open)';
- // usage slice (3.0.0): the Usage tab's mode/rotate selectors.
+ // usage slice: mode + rotation (default + per-provider).
  if(c.usage){
   sv('usage-mode',c.usage.mode||'auto');
   sv('usage-rotate',c.usage.autoRotateSec!=null?c.usage.autoRotateSec:30);
+  sv('usage-codex-sec',c.usage.codexSec||0);
+  sv('usage-zai-sec',c.usage.zaiSec||0);
+  sv('usage-system-sec',c.usage.systemSec||0);
  }
 })}
 
@@ -290,7 +285,10 @@ function collect(){
   nightEnd:gv('nightEnd')||'07:00',nightLevel:parseInt(gv('nightLevel'))||0};}
  // usage slice (3.0.0): mode + autoRotateSec live here, not in the top-level mode.
  if($('usage-mode')){o.usage={mode:gv('usage-mode')||'auto',
-  autoRotateSec:parseInt(gv('usage-rotate'))||30};}
+  autoRotateSec:parseInt(gv('usage-rotate'))||30,
+  codexSec:parseInt(gv('usage-codex-sec'))||0,
+  zaiSec:parseInt(gv('usage-zai-sec'))||0,
+  systemSec:parseInt(gv('usage-system-sec'))||0};}
  return o;
 }
 function saveAll(){j('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(collect())})

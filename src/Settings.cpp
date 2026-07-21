@@ -24,6 +24,9 @@ static String randomApPass() {
 void UsageSettings::setDefaults() {
   mode          = DEFAULT_MODE;
   autoRotateSec = USAGE_AUTOROTATE_SEC;
+  codexSec      = 0;   // 0 = fall back to autoRotateSec
+  zaiSec        = 0;
+  systemSec     = 0;
 }
 
 void UsageSettings::toJson(JsonObject o) const {
@@ -31,6 +34,9 @@ void UsageSettings::toJson(JsonObject o) const {
                      : (mode == MODE_CODEX)  ? "codex"
                      : (mode == MODE_SYSTEM) ? "system" : "auto";
   o["autoRotateSec"] = autoRotateSec;
+  o["codexSec"]      = codexSec;
+  o["zaiSec"]        = zaiSec;
+  o["systemSec"]     = systemSec;
 }
 
 void UsageSettings::fromJson(JsonObjectConst o) {
@@ -43,6 +49,11 @@ void UsageSettings::fromJson(JsonObjectConst o) {
   if (o["autoRotateSec"].is<int>())
     autoRotateSec = (uint16_t)constrain((int)o["autoRotateSec"],
                                         USAGE_AUTOROTATE_MIN, USAGE_AUTOROTATE_MAX);
+  // Per-provider dwell (0 = inherit autoRotateSec). Min 2s so very fast
+  // rotations (3s) are expressible.
+  if (o["codexSec"].is<int>())  codexSec  = (uint16_t)constrain((int)o["codexSec"],  0, USAGE_AUTOROTATE_MAX);
+  if (o["zaiSec"].is<int>())    zaiSec    = (uint16_t)constrain((int)o["zaiSec"],    0, USAGE_AUTOROTATE_MAX);
+  if (o["systemSec"].is<int>()) systemSec = (uint16_t)constrain((int)o["systemSec"], 0, USAGE_AUTOROTATE_MAX);
 }
 
 // ===========================================================================

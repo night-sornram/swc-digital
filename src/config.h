@@ -65,7 +65,7 @@ enum UiMode : uint8_t {
 // ---------------------------------------------------------------------------
 #define USAGE_STALE_AFTER_MS    180000UL   // mark STALE after 180 s without a push
 #define USAGE_AUTOROTATE_SEC    30         // AUTO: dwell on each provider
-#define USAGE_AUTOROTATE_MIN    5
+#define USAGE_AUTOROTATE_MIN    2
 #define USAGE_AUTOROTATE_MAX    3600
 
 // Palette (RGB565). Match the spec exactly.

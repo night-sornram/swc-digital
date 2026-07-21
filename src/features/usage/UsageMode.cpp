@@ -264,28 +264,6 @@ void UsageMode::service(const Settings& s) {
     lastWeeklyReset_[active_]   = pu.weekly.resetMin;
   }
 
-  // Partial: age row (y=204..239) only when the minute value changed.
-  uint32_t age = g_usageStore.ageMs(active_);
-  uint16_t ageMin = (age == 0xFFFFFFFFUL) ? 0xFFFF : (uint16_t)(age / 60000UL);
-  if (ageMin != lastAgeMin_[active_]) {
-    auto* d = gfxDev();
-    d->fillRect(0, 204, 240, 36, USAGE_COLOR_BG);
-    d->setTextSize(2);
-    d->setTextColor(USAGE_COLOR_MUTED);
-    d->setCursor(10, 212);
-    if (age == 0xFFFFFFFFUL) {
-      d->print("AGE --");
-    } else {
-      char buf[20];
-      snprintf(buf, sizeof(buf), "AGE %um", ageMin);
-      d->print(buf);
-    }
-    // AUTO / MANUAL marker (right).
-    const char* am = (s.mode == MODE_AUTO) ? "AUTO" : "MANUAL";
-    d->setTextColor((s.mode == MODE_AUTO) ? providerColor : USAGE_COLOR_MUTED);
-    int16_t tw = gfxTextW(am, 2);   // fallback: textWidth() unavailable in this GFX version
-    d->setCursor(232 - tw, 212);
-    d->print(am);
-    lastAgeMin_[active_] = ageMin;
-  }
+  // (v3.2.7: Age row + AUTO/MANUAL marker removed from y=204..239 — was
+  // clutter. LIVE/STALE in the title bar is enough; full age is in WebUI.)
 }
