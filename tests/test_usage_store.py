@@ -62,5 +62,67 @@ class PushValidationTests(unittest.TestCase):
         b = {"v":1,"provider":"codex","weekly_used_pct":100}
         self.assertTrue(validate_push("codex", b))
 
+    # ---- system (was missing from the mirror — now covered) ----
+    def test_system_full(self):
+        b = {"v": 1, "provider": "system",
+             "five_hour_used_pct": 42, "weekly_used_pct": 68, "extra_pct": 71}
+        self.assertTrue(validate_push("system", b))
+
+    def test_system_bad_extra(self):
+        b = {"v": 1, "provider": "system",
+             "five_hour_used_pct": 42, "extra_pct": 150}
+        self.assertFalse(validate_push("system", b))
+
+    # ---- vitals ----
+    def test_vitals_full(self):
+        b = {"v": 1, "provider": "vitals",
+             "five_hour_used_pct": 42, "weekly_used_pct": 68, "extra_pct": 71,
+             "temp_c": 54, "battery_pct": 100, "uptime_min": 134}
+        self.assertTrue(validate_push("vitals", b))
+
+    def test_vitals_temp_na_is_null(self):
+        # Apple Silicon: temp_c is null (not sent) — must still accept.
+        b = {"v": 1, "provider": "vitals",
+             "five_hour_used_pct": 42, "weekly_used_pct": 68}
+        self.assertTrue(validate_push("vitals", b))
+
+    def test_vitals_bad_temp(self):
+        b = {"v": 1, "provider": "vitals",
+             "five_hour_used_pct": 42, "temp_c": 200}
+        self.assertFalse(validate_push("vitals", b))
+
+    def test_vitals_neg_temp_ok(self):
+        b = {"v": 1, "provider": "vitals",
+             "five_hour_used_pct": 42, "temp_c": -10}
+        self.assertTrue(validate_push("vitals", b))
+
+    def test_vitals_bad_uptime(self):
+        b = {"v": 1, "provider": "vitals",
+             "five_hour_used_pct": 42, "uptime_min": 70000}
+        self.assertFalse(validate_push("vitals", b))
+
+    # ---- weather ----
+    def test_weather_full(self):
+        b = {"v": 1, "provider": "weather",
+             "five_hour_used_pct": 31, "weekly_used_pct": 87,
+             "weather_code": 3, "temp_min": 26, "temp_max": 34, "aqi_pm25": 25}
+        self.assertTrue(validate_push("weather", b))
+
+    def test_weather_bad_code(self):
+        b = {"v": 1, "provider": "weather",
+             "five_hour_used_pct": 31, "weather_code": 150}
+        self.assertFalse(validate_push("weather", b))
+
+    def test_weather_bad_pm25(self):
+        b = {"v": 1, "provider": "weather",
+             "five_hour_used_pct": 31, "aqi_pm25": 300}
+        self.assertFalse(validate_push("weather", b))
+
+    def test_weather_bool_rejected(self):
+        # bool must not sneak through as int (Python gotcha).
+        b = {"v": 1, "provider": "weather",
+             "five_hour_used_pct": 31, "aqi_pm25": True}
+        self.assertFalse(validate_push("weather", b))
+
 if __name__ == "__main__":
     unittest.main()
