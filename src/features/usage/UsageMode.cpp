@@ -248,13 +248,13 @@ void UsageMode::setActiveProvider(UsageProvider p) {
 }
 
 void UsageMode::toggleAutoProvider() {
-  // Rotate CODEX → ZAI → VITALS → CODEX. (SYSTEM removed from rotation in
-  // 3.3.1 — VITALS is its superset with battery/uptime/temp added.)
+  // Rotate CODEX → ZAI → VITALS → WEATHER → CODEX.
   switch (active_) {
-    case PROVIDER_CODEX:  active_ = PROVIDER_ZAI;    break;
-    case PROVIDER_ZAI:    active_ = PROVIDER_VITALS; break;
-    case PROVIDER_VITALS:
-    default:              active_ = PROVIDER_CODEX;  break;
+    case PROVIDER_CODEX:   active_ = PROVIDER_ZAI;     break;
+    case PROVIDER_ZAI:     active_ = PROVIDER_VITALS;  break;
+    case PROVIDER_VITALS:  active_ = PROVIDER_WEATHER; break;
+    case PROVIDER_WEATHER:
+    default:               active_ = PROVIDER_CODEX;   break;
   }
   needsFullRedraw_ = true;
 }
