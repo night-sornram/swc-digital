@@ -291,16 +291,31 @@ void UsageMode::setActiveProvider(UsageProvider p) {
   needsFullRedraw_ = true;
 }
 
-void UsageMode::toggleAutoProvider() {
-  // Rotate CODEX → ZAI → VITALS → WEATHER → CODEX.
+void UsageMode::toggleAutoProvider(uint8_t mask) {
+  // Rotation order: codex(0) → zai(1) → vitals(2) → weather(3) → codex(0).
+  // Each mode is enabled if its bit is set in mask.
+  // Find the next enabled mode after the current one.
+  static const uint8_t ORDER[] = {0, 1, 2, 3};  // codex, zai, vitals, weather
+  static const UsageProvider PROVS[] = {PROVIDER_CODEX, PROVIDER_ZAI,
+                                        PROVIDER_VITALS, PROVIDER_WEATHER};
+  // Map current active to index in ORDER.
+  uint8_t cur = 0;
   switch (active_) {
-    case PROVIDER_CODEX:   active_ = PROVIDER_ZAI;     break;
-    case PROVIDER_ZAI:     active_ = PROVIDER_VITALS;  break;
-    case PROVIDER_VITALS:  active_ = PROVIDER_WEATHER; break;
-    case PROVIDER_WEATHER:
-    default:               active_ = PROVIDER_CODEX;   break;
+    case PROVIDER_ZAI:     cur = 1; break;
+    case PROVIDER_VITALS:  cur = 2; break;
+    case PROVIDER_WEATHER: cur = 3; break;
+    default:               cur = 0; break;
   }
-  needsFullRedraw_ = true;
+  // Find next enabled (wrapping).
+  for (uint8_t i = 1; i <= 4; i++) {
+    uint8_t idx = (cur + i) % 4;
+    if (mask & (1 << ORDER[idx])) {
+      active_ = PROVS[idx];
+      needsFullRedraw_ = true;
+      return;
+    }
+  }
+  // Fallback: stay on current.
 }
 
 void UsageMode::service(const Settings& s) {

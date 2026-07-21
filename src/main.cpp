@@ -42,13 +42,17 @@ static void applyMode(const Settings& s) {
   switch (s.usage.mode) {
     case MODE_CODEX:   g_usageMode.setActiveProvider(PROVIDER_CODEX);   break;
     case MODE_ZAI:     g_usageMode.setActiveProvider(PROVIDER_ZAI);     break;
-    case MODE_SYSTEM:  g_usageMode.setActiveProvider(PROVIDER_SYSTEM);  break;
     case MODE_VITALS:  g_usageMode.setActiveProvider(PROVIDER_VITALS);  break;
     case MODE_WEATHER: g_usageMode.setActiveProvider(PROVIDER_WEATHER); break;
     case MODE_AUTO:
     default: {
-      // Start (or restart) on CODEX; reset timer whenever we (re)enter AUTO.
-      g_usageMode.setActiveProvider(PROVIDER_CODEX);
+      // Start on the first enabled mode in the mask.
+      uint8_t mask = s.usage.autoMask;
+      if      (mask & 0x01) g_usageMode.setActiveProvider(PROVIDER_CODEX);
+      else if (mask & 0x02) g_usageMode.setActiveProvider(PROVIDER_ZAI);
+      else if (mask & 0x04) g_usageMode.setActiveProvider(PROVIDER_VITALS);
+      else if (mask & 0x08) g_usageMode.setActiveProvider(PROVIDER_WEATHER);
+      else                  g_usageMode.setActiveProvider(PROVIDER_CODEX);
       g_autoSwitch = millis();
       break;
     }
@@ -250,13 +254,13 @@ void loop() {
   clockService(g_settings);
   appApplyBrightness();
 
-  // AUTO rotation: single dwell time for all providers.
+  // AUTO rotation: single dwell time for all enabled providers.
   if (g_settings.usage.mode == MODE_AUTO) {
     if (g_autoSwitch == 0) g_autoSwitch = millis();
     uint16_t dwell = g_settings.usage.autoRotateSec;
     if (millis() - g_autoSwitch >= (uint32_t)dwell * 1000UL) {
       g_autoSwitch = millis();
-      g_usageMode.toggleAutoProvider();
+      g_usageMode.toggleAutoProvider(g_settings.usage.autoMask);
     }
   }
 

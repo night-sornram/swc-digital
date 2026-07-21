@@ -21,7 +21,7 @@ class UsageMode : public DisplayMode {
 
   // Called by main.cpp when AUTO rotates: repaint the new provider.
   void setActiveProvider(UsageProvider p);
-  void toggleAutoProvider();   // rotates CODEX → ZAI → SYSTEM → CODEX
+  void toggleAutoProvider(uint8_t mask);   // rotate to next enabled mode in mask
   UsageProvider activeProvider() const { return active_; }   // for per-provider dwell
  private:
   bool needsFullRedraw_ = true;

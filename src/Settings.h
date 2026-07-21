@@ -17,11 +17,9 @@ struct WifiCred {
 
 // ---- Usage display slice (3.0.0) ------------------------------------------
 struct UsageSettings {
-  uint8_t  mode;            // MODE_CODEX / MODE_ZAI / MODE_SYSTEM / MODE_AUTO
-  uint16_t autoRotateSec;   // legacy single dwell (kept for migration; ignored when per-provider set)
-  uint16_t codexSec;        // AUTO: seconds on CODEX screen (2..3600, 0 = use autoRotateSec)
-  uint16_t zaiSec;          // AUTO: seconds on ZAI screen
-  uint16_t systemSec;       // AUTO: seconds on SYSTEM screen
+  uint8_t  mode;            // MODE_CODEX / MODE_ZAI / MODE_AUTO / MODE_VITALS / MODE_WEATHER
+  uint16_t autoRotateSec;   // seconds per screen in AUTO mode (2..3600)
+  uint8_t  autoMask;        // bitmask: bit0=codex, bit1=zai, bit2=vitals, bit3=weather
 
   void setDefaults();
   void toJson(JsonObject o) const;

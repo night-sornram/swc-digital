@@ -112,18 +112,17 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
    <div class="chk"><input id="backlightInverted" type="checkbox"><label>Backlight is active-low (try if screen stays dark)</label></div>
   </div>
   <div class="card"><h2>Display mode</h2>
-   <label>What this device shows</label>
-   <select id="usage-mode">
-    <option value="codex">Codex</option>
-    <option value="zai">Z.ai</option>
-    <option value="auto">Auto (rotate)</option>
-    <option value="vitals">Vitals (Mac)</option>
-    <option value="weather">Weather + Clock</option>
-   </select>
+   <label>Select screens to show (multiple = auto rotate)</label>
+   <div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0 12px">
+    <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="mode-codex" value="codex"> Codex</label>
+    <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="mode-zai" value="zai"> Z.ai</label>
+    <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="mode-vitals" value="vitals"> Vitals (Mac)</label>
+    <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="mode-weather" value="weather"> Weather</label>
+   </div>
    <label>Rotation seconds per screen (2&ndash;3600)</label>
    <input id="usage-rotate" type="number" min="2" max="3600" step="1">
   </div>
-  <div class="card" id="weather-card" style="display:none">
+  <div class="card" id="weather-card">
    <h2>Weather location</h2>
    <label>City label (short, on screen)</label>
    <input type="text" id="weather-city" maxlength="6" placeholder="BKK">
@@ -265,10 +264,16 @@ function loadConfig(){return j('/api/config').then(function(c){C=c;
  sv('nightStart',ck.nightStart||'22:00'); sv('nightEnd',ck.nightEnd||'07:00');
  sv('nightLevel',ck.nightLevel!=null?ck.nightLevel:0); $('nlVal')&&($('nlVal').textContent=(ck.nightLevel!=null?ck.nightLevel:0));
  var ap=$('apPass'); if(ap)ap.placeholder=c.apPassSet?'(unchanged)':'(open)';
- // usage slice: mode + rotation (default + per-provider).
+ // usage slice: mode checkboxes + rotation.
  if(c.usage){
-  sv('usage-mode',c.usage.mode||'auto');
   sv('usage-rotate',c.usage.autoRotateSec!=null?c.usage.autoRotateSec:30);
+  // Mode checkboxes: if mode=auto, check all in autoModes; else check only that mode.
+  var mode=c.usage.mode||'auto';
+  var autoModes=c.usage.autoModes||['codex','zai','vitals','weather'];
+  var modesToCheck=(mode==='auto')?autoModes:[mode];
+  ['codex','zai','vitals','weather'].forEach(function(m){
+   var cb=$('mode-'+m); if(cb) cb.checked=(modesToCheck.indexOf(m)>=0);
+  });
  }
  var w = c.weather || {};
  if($('weather-city')) sv('weather-city', w.city || 'BKK');
@@ -292,9 +297,15 @@ function collect(){
   o.clock={tz:_tzn,tzPosix:_tzp,
   nightEnabled:gc('nightEnabled'),nightStart:gv('nightStart')||'22:00',
   nightEnd:gv('nightEnd')||'07:00',nightLevel:parseInt(gv('nightLevel'))||0};}
- // usage slice (3.0.0): mode + autoRotateSec live here, not in the top-level mode.
- if($('usage-mode')){o.usage={mode:gv('usage-mode')||'auto',
-  autoRotateSec:parseInt(gv('usage-rotate'))||30};}
+ // usage slice: mode checkboxes + rotation.
+ if($('mode-codex')){
+  var checked=[];
+  ['codex','zai','vitals','weather'].forEach(function(m){if($('mode-'+m).checked)checked.push(m)});
+  if(checked.length===0)checked=['codex']; // fallback: at least one
+  o.usage={mode:(checked.length>1)?'auto':checked[0],
+   autoRotateSec:parseInt(gv('usage-rotate'))||30};
+  if(checked.length>1)o.usage.autoModes=checked;
+ }
  if($('weather-card')){o.weather={city:gv('weather-city')||'BKK',cityName:gv('weather-city-name')||'Bangkok',lat:parseFloat(gv('weather-lat'))||13.7563,lon:parseFloat(gv('weather-lon'))||100.5018};}
  return o;
 }
@@ -457,13 +468,10 @@ function upload(){var f=$('fw').files[0];if(!f){toast('Pick a .bin first');retur
  x.send(fd);
 }
 
-function syncWeatherCard(){var wm=gv('usage-mode');var wc=$('weather-card');if(wc)wc.style.display=(wm==='weather')?'':'none'}
-
 loadIdentity();
-loadConfig().then(function(){syncWeatherCard()}).then(loadStatus).then(loadUsageOverview);
+loadConfig().then(loadStatus).then(loadUsageOverview);
 setInterval(loadStatus,5000);
 // Refresh button (Usage tab): read-only — never fire a provider API from the UI.
 var _ur=$('usage-refresh'); if(_ur)_ur.onclick=loadUsageOverview;
-var _um=$('usage-mode'); if(_um)_um.addEventListener('change',syncWeatherCard);
 </script>
 </body></html>)HTMLPAGE";

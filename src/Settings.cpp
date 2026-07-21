@@ -24,21 +24,32 @@ static String randomApPass() {
 void UsageSettings::setDefaults() {
   mode          = DEFAULT_MODE;
   autoRotateSec = USAGE_AUTOROTATE_SEC;
-  codexSec      = 0;   // 0 = fall back to autoRotateSec
-  zaiSec        = 0;
-  systemSec     = 0;
+  autoMask      = 0x0F;   // all 4 modes enabled (codex|zai|vitals|weather)
+}
+
+// Helper: map mode constant to bitmask bit.
+static uint8_t modeToBit(uint8_t m) {
+  switch (m) {
+    case MODE_CODEX:   return 0x01;
+    case MODE_ZAI:     return 0x02;
+    case MODE_VITALS:  return 0x04;
+    case MODE_WEATHER: return 0x08;
+    default:           return 0;
+  }
 }
 
 void UsageSettings::toJson(JsonObject o) const {
   o["mode"]          = (mode == MODE_ZAI)     ? "zai"
                      : (mode == MODE_CODEX)   ? "codex"
-                     : (mode == MODE_SYSTEM)  ? "system"
                      : (mode == MODE_VITALS)  ? "vitals"
                      : (mode == MODE_WEATHER) ? "weather" : "auto";
   o["autoRotateSec"] = autoRotateSec;
-  o["codexSec"]      = codexSec;
-  o["zaiSec"]        = zaiSec;
-  o["systemSec"]     = systemSec;
+  // Serialize autoMask as a JSON array of mode strings.
+  JsonArray arr = o["autoModes"].to<JsonArray>();
+  if (autoMask & 0x01) arr.add("codex");
+  if (autoMask & 0x02) arr.add("zai");
+  if (autoMask & 0x04) arr.add("vitals");
+  if (autoMask & 0x08) arr.add("weather");
 }
 
 void UsageSettings::fromJson(JsonObjectConst o) {
@@ -46,18 +57,25 @@ void UsageSettings::fromJson(JsonObjectConst o) {
     String m = o["mode"].as<String>();
     mode = m.equalsIgnoreCase("zai")     ? MODE_ZAI
          : m.equalsIgnoreCase("codex")   ? MODE_CODEX
-         : m.equalsIgnoreCase("system")  ? MODE_SYSTEM
          : m.equalsIgnoreCase("vitals")  ? MODE_VITALS
          : m.equalsIgnoreCase("weather") ? MODE_WEATHER : MODE_AUTO;
   }
   if (o["autoRotateSec"].is<int>())
     autoRotateSec = (uint16_t)constrain((int)o["autoRotateSec"],
                                         USAGE_AUTOROTATE_MIN, USAGE_AUTOROTATE_MAX);
-  // Per-provider dwell (0 = inherit autoRotateSec). Min 2s so very fast
-  // rotations (3s) are expressible.
-  if (o["codexSec"].is<int>())  codexSec  = (uint16_t)constrain((int)o["codexSec"],  0, USAGE_AUTOROTATE_MAX);
-  if (o["zaiSec"].is<int>())    zaiSec    = (uint16_t)constrain((int)o["zaiSec"],    0, USAGE_AUTOROTATE_MAX);
-  if (o["systemSec"].is<int>()) systemSec = (uint16_t)constrain((int)o["systemSec"], 0, USAGE_AUTOROTATE_MAX);
+  // Parse autoModes array → bitmask. If absent, keep default (all enabled).
+  if (o["autoModes"].is<JsonArrayConst>()) {
+    uint8_t mask = 0;
+    for (JsonVariantConst v : o["autoModes"].as<JsonArrayConst>()) {
+      if (!v.is<const char*>()) continue;
+      String s = v.as<String>();
+      if (s.equalsIgnoreCase("codex"))   mask |= 0x01;
+      else if (s.equalsIgnoreCase("zai"))     mask |= 0x02;
+      else if (s.equalsIgnoreCase("vitals"))  mask |= 0x04;
+      else if (s.equalsIgnoreCase("weather")) mask |= 0x08;
+    }
+    if (mask) autoMask = mask;   // only apply if at least one valid mode
+  }
 }
 
 // ===========================================================================
