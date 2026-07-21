@@ -383,25 +383,75 @@ void UsageMode::service(const Settings& s) {
       int16_t tw = gfxTextW(pill, 2);
       d->setCursor(232 - tw, 10);
       d->print(pill);
-      // CPU hero card (full width, 224px).
-      drawSystemCard(42,  "CPU", pu.fiveHour.usedPct, pu.fiveHour.available, providerColor, stale);
+      // CPU hero card (full width, VITALS style: label + big number).
+      auto* d2 = gfxDev();
+      d2->fillRoundRect(8, 42, 224, 56, 5, USAGE_COLOR_CARD);
+      d2->setTextColor(USAGE_COLOR_MUTED);
+      d2->setTextSize(2);
+      d2->setCursor(18, 48);
+      d2->print("CPU");
+      d2->setTextSize(4);
+      if (pu.fiveHour.available) {
+        d2->setTextColor(barColorFor(pu.fiveHour.usedPct, providerColor, stale));
+        char buf[8]; snprintf(buf, sizeof(buf), "%u%%", pu.fiveHour.usedPct);
+        int16_t tw2 = gfxTextW(buf, 4);
+        d2->setCursor(222 - tw2, 50);
+        d2->print(buf);
+      } else {
+        d2->setTextColor(USAGE_COLOR_MUTED);
+        int16_t tw2 = gfxTextW("--", 4);
+        d2->setCursor(222 - tw2, 50);
+        d2->print("--");
+      }
+      // Slim bar.
+      d2->fillRoundRect(18, 82, 204, 8, 3, USAGE_COLOR_BG);
+      if (pu.fiveHour.available && pu.fiveHour.usedPct > 0) {
+        int16_t fw = (int16_t)(204 * (uint32_t)pu.fiveHour.usedPct / 100UL);
+        if (fw < 4) fw = 4;
+        d2->fillRoundRect(18, 82, fw, 8, 3, barColorFor(pu.fiveHour.usedPct, providerColor, stale));
+      }
       // RAM + DISK side by side (half width).
-      drawVitalsCard(8,   98, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
+      drawVitalsCard(8,   104, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
       bool ssdAvail = (pu.extraPct != 0xFF);
-      drawVitalsCard(124, 98, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
+      drawVitalsCard(124, 104, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
       // Banner: battery + uptime.
-      drawVitalsBanner(174, pu.batteryPct, pu.uptimeMin, stale);
+      drawVitalsBanner(180, pu.batteryPct, pu.uptimeMin, stale);
       lastFiveHourOk_[active_] = pu.lastOkMs;
       lastStale_[active_]      = stale;
       return;
     }
     // Partial: data changed → repaint cards + banner.
     if (pu.lastOkMs != lastFiveHourOk_[active_] || stale != lastStale_[active_]) {
-      drawSystemCard(42,  "CPU", pu.fiveHour.usedPct, pu.fiveHour.available, providerColor, stale);
-      drawVitalsCard(8,   98, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
+      // CPU full width.
+      auto* d3 = gfxDev();
+      d3->fillRoundRect(8, 42, 224, 56, 5, USAGE_COLOR_CARD);
+      d3->setTextColor(USAGE_COLOR_MUTED);
+      d3->setTextSize(2);
+      d3->setCursor(18, 48);
+      d3->print("CPU");
+      d3->setTextSize(4);
+      if (pu.fiveHour.available) {
+        d3->setTextColor(barColorFor(pu.fiveHour.usedPct, providerColor, stale));
+        char buf[8]; snprintf(buf, sizeof(buf), "%u%%", pu.fiveHour.usedPct);
+        int16_t tw3 = gfxTextW(buf, 4);
+        d3->setCursor(222 - tw3, 50);
+        d3->print(buf);
+      } else {
+        d3->setTextColor(USAGE_COLOR_MUTED);
+        int16_t tw3 = gfxTextW("--", 4);
+        d3->setCursor(222 - tw3, 50);
+        d3->print("--");
+      }
+      d3->fillRoundRect(18, 82, 204, 8, 3, USAGE_COLOR_BG);
+      if (pu.fiveHour.available && pu.fiveHour.usedPct > 0) {
+        int16_t fw = (int16_t)(204 * (uint32_t)pu.fiveHour.usedPct / 100UL);
+        if (fw < 4) fw = 4;
+        d3->fillRoundRect(18, 82, fw, 8, 3, barColorFor(pu.fiveHour.usedPct, providerColor, stale));
+      }
+      drawVitalsCard(8,   104, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
       bool ssdAvail = (pu.extraPct != 0xFF);
-      drawVitalsCard(124, 98, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
-      drawVitalsBanner(174, pu.batteryPct, pu.uptimeMin, stale);
+      drawVitalsCard(124, 104, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
+      drawVitalsBanner(180, pu.batteryPct, pu.uptimeMin, stale);
       lastFiveHourOk_[active_] = pu.lastOkMs;
       lastStale_[active_]      = stale;
     }
@@ -449,9 +499,9 @@ void UsageMode::service(const Settings& s) {
     // Region 1: Time + date (repaint only when minute changes).
     if (synced && (uint8_t)mm != lastClockMin_) {
       auto* d = gfxDev();
-      // Clear time+date area (y=42..125).
-      d->fillRect(0, 42, 240, 84, USAGE_COLOR_BG);
-      // Time HH:MM — 48px, centered, teal.
+      // Clear time+date area.
+      d->fillRect(0, 42, 240, 100, USAGE_COLOR_BG);
+      // Time HH:MM — size5, centered, teal.
       d->setTextColor(providerColor);
       d->setTextSize(5);
       char tb[8];
@@ -459,7 +509,7 @@ void UsageMode::service(const Settings& s) {
       int16_t tw = gfxTextW(tb, 5);
       d->setCursor((240 - tw) / 2, 44);
       d->print(tb);
-      // Date: day of week (bigger) + full date below.
+      // Date: day of week + full date below (both size3).
       int mon = lt.tm_mon + 1;
       int yr  = lt.tm_year + 1900;
       int dd  = lt.tm_mday;
@@ -469,24 +519,24 @@ void UsageMode::service(const Settings& s) {
       static const char* MONS[] = {"Jan","Feb","Mar","Apr","May","Jun",
                                    "Jul","Aug","Sep","Oct","Nov","Dec"};
       d->setTextColor(USAGE_COLOR_TEXT);
-      d->setTextSize(2);
+      d->setTextSize(3);
       if (dow >= 0 && dow <= 6) {
-        int16_t dw = gfxTextW(DOWS[dow], 2);
-        d->setCursor((240 - dw) / 2, 96);
+        int16_t dw = gfxTextW(DOWS[dow], 3);
+        d->setCursor((240 - dw) / 2, 94);
         d->print(DOWS[dow]);
       }
       d->setTextColor(USAGE_COLOR_MUTED);
-      d->setTextSize(2);
+      d->setTextSize(3);
       char db[24];
       snprintf(db, sizeof(db), "%d %s %d", dd,
                (mon>=1&&mon<=12)?MONS[mon-1]:"---", yr);
-      int16_t dw2 = gfxTextW(db, 2);
-      d->setCursor((240 - dw2) / 2, 116);
+      int16_t dw2 = gfxTextW(db, 3);
+      d->setCursor((240 - dw2) / 2, 120);
       d->print(db);
       lastClockMin_ = (uint8_t)mm;
     } else if (!synced && lastClockMin_ != 0xFE) {
       auto* d = gfxDev();
-      d->fillRect(0, 42, 240, 84, USAGE_COLOR_BG);
+      d->fillRect(0, 42, 240, 100, USAGE_COLOR_BG);
       d->setTextColor(USAGE_COLOR_MUTED);
       d->setTextSize(2);
       const char* w = "waiting NTP...";
@@ -499,17 +549,17 @@ void UsageMode::service(const Settings& s) {
     // Region 2: Weather card with icon (repaint when new push lands).
     if (pu.lastOkMs != lastFiveHourOk_[active_]) {
       auto* d = gfxDev();
-      // Card y=132..196.
-      d->fillRoundRect(8, 132, 224, 64, 6, USAGE_COLOR_CARD);
+      // Card moved down to fit bigger date text.
+      d->fillRoundRect(8, 148, 224, 70, 6, USAGE_COLOR_CARD);
       // Icon (left side).
       if (pu.weatherCode != 0xFF)
-        drawWeatherIcon(36, 164, pu.weatherCode, providerColor);
+        drawWeatherIcon(36, 183, pu.weatherCode, providerColor);
       // Temp + condition (right of icon).
       d->setTextColor(providerColor);
       d->setTextSize(4);
       char tb[8];
       snprintf(tb, sizeof(tb), "%u", pu.fiveHour.usedPct);
-      d->setCursor(60, 136);
+      d->setCursor(60, 152);
       d->print(tb);
       d->setTextSize(2);
       d->print("C");
@@ -517,14 +567,14 @@ void UsageMode::service(const Settings& s) {
       d->setTextColor(USAGE_COLOR_MUTED);
       d->setTextSize(2);
       const char* cond = (pu.weatherCode != 0xFF) ? wmoLabel(pu.weatherCode) : "---";
-      d->setCursor(60, 166);
+      d->setCursor(60, 180);
       d->print(cond);
-      // Hi/Lo.
+      // Hi/Lo (bigger font).
       if (pu.tempC != (int8_t)0x80 && pu.extraPct != 0xFF) {
         char hl[24];
         snprintf(hl, sizeof(hl), "H%u  L%d", pu.extraPct, (int)pu.tempC);
-        d->setTextSize(1);
-        d->setCursor(60, 184);
+        d->setTextSize(2);
+        d->setCursor(60, 200);
         d->print(hl);
       }
       lastFiveHourOk_[active_] = pu.lastOkMs;
