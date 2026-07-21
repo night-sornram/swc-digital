@@ -87,12 +87,18 @@ def compute_h1(pairkey: str) -> str:
 
 # ---- HTTP -------------------------------------------------------------------
 
-def build_opener(pairkey: str) -> urllib.request.OpenerDirector:
-    """urllib opener with HTTP Digest auth (admin + pairkey)."""
+def build_opener(pairkey: str, base_url: str = "") -> urllib.request.OpenerDirector:
+    """urllib opener with HTTP Basic auth (admin + pairkey).
+
+    Basic is used (not Digest) because the ESP8266WebServer's Digest impl
+    rotates the nonce per challenge, causing browsers to re-prompt every few
+    minutes. Basic lets the browser cache credentials for the whole session.
+    The threat model (friend on the same Wi-Fi) is satisfied by either.
+    """
     pwd_mgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
-    # The realm is fixed (DIGEST_REALM), so we set it on all hosts at :80.
-    pwd_mgr.add_password(DIGEST_REALM, None, DIGEST_USERNAME, pairkey)
-    opener = urllib.request.build_opener(urllib.request.HTTPDigestAuthHandler(pwd_mgr))
+    uri = base_url if base_url else ""
+    pwd_mgr.add_password(None, uri, DIGEST_USERNAME, pairkey)
+    opener = urllib.request.build_opener(urllib.request.HTTPBasicAuthHandler(pwd_mgr))
     return opener
 
 

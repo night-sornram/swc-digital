@@ -3,6 +3,8 @@
 #include "config.h"       // FW_NAME, FW_VERSION
 #include "Net.h"          // netMode()
 #include <ArduinoJson.h>
+#include <ESP8266WebServer.h>
+#include <MD5Builder.h>
 
 Security g_security;
 
@@ -49,10 +51,55 @@ bool Security::authorize(ESP8266WebServer& server, bool recovery) const {
   // enforces "unpaired only" separately (Task 4).
   (void)recovery;
   if (!hasH1()) return true;
-  // Paired: require Digest for every protected route. The ESP8266WebServer
-  // API issues the 401 challenge itself if authenticateDigest returns false.
-  if (!server.authenticateDigest(SECURITY_USER, h1_.c_str())) {
-    server.requestAuthentication(DIGEST_AUTH, SECURITY_REALM);
+  // Paired: require HTTP Basic auth. Basic was chosen over Digest because
+  // the ESP8266WebServer's Digest impl regenerates the nonce/opaque on every
+  // challenge, so browsers (especially Safari) re-prompt every few minutes.
+  // Basic lets the browser cache credentials for the whole session.
+  //
+  // We store only the MD5 H1 (not the plaintext pairkey), so we cannot use
+  // server.authenticateBasic(user, plaintext) directly. Instead we decode
+  // the incoming Basic header, MD5 the claimed "admin:pairkey", and compare
+  // to h1_. Constant-time compare prevents timing leaks.
+  if (!server.hasHeader(F("Authorization"))) {
+    server.requestAuthentication(BASIC_AUTH, SECURITY_REALM);
+    return false;
+  }
+  String auth = server.header(F("Authorization"));
+  if (!auth.startsWith(F("Basic "))) {
+    server.requestAuthentication(BASIC_AUTH, SECURITY_REALM);
+    return false;
+  }
+  // Decode base64 after "Basic ".
+  String b64 = auth.substring(6);
+  b64.trim();
+  // mbedtls-style decode via the ESP8266's wrapper. We do a small inline
+  // decode (base64 alphabet only) to avoid pulling another lib.
+  static const char ALPH[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  String decoded;
+  int val = 0, valb = -8;
+  for (size_t i = 0; i < b64.length(); i++) {
+    char c = b64[i];
+    if (c == '=') break;
+    const char* p = strchr(ALPH, c);
+    if (!p) continue;
+    val = (val << 6) | (p - ALPH);
+    valb += 6;
+    if (valb >= 0) {
+      decoded += (char)((val >> valb) & 0xFF);
+      valb -= 8;
+    }
+  }
+  // decoded == "admin:pairkey". MD5 it and compare to h1_.
+  MD5Builder md5;
+  md5.begin();
+  md5.add(decoded);
+  md5.calculate();
+  String got = md5.toString();
+  // Constant-time compare.
+  uint8_t diff = 0;
+  for (uint8_t i = 0; i < 32; i++) diff |= (uint8_t)got[i] ^ (uint8_t)h1_[i];
+  if (diff != 0) {
+    server.requestAuthentication(BASIC_AUTH, SECURITY_REALM);
     return false;
   }
   return true;
