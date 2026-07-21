@@ -11,7 +11,7 @@
 #include <SPI.h>
 #include <Arduino_GFX_Library.h>
 
-#include "board_esp8266.h"
+#include "board_smalltv_ultra.h"
 #include "thai_greeting_bitmap.h"
 
 namespace {

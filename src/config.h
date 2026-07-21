@@ -34,13 +34,9 @@
 // Provides TFT_SCLK/MOSI/DC/RST/CS/BL, TFT_BGR, TFT_BL_DEFAULT_INVERTED,
 // HAS_LDR/LDR_PIN/ADC_MAX. Both panels are 1.54" 240x240 ST7789 IPS.
 // ---------------------------------------------------------------------------
-#if defined(SMALLTV_ESP32C2)
-  #include "board_esp32c2.h"
-#elif defined(SMALLTV_ESP32)
-  #include "board_esp32.h"
-#else
-  #include "board_esp8266.h"
-#endif
+// SmallTV-ultra only (ESP-12F / ESP8266). The multi-board target-selection
+// macro was removed in 3.0.0 when ESP32-C2 and NM-TV-154 support was dropped.
+#include "board_smalltv_ultra.h"
 
 #define TFT_WIDTH  240
 #define TFT_HEIGHT 240
