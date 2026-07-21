@@ -1,5 +1,6 @@
 #include "Net.h"
 #include "Platform.h"
+#include "Security.h"
 #include <DNSServer.h>
 
 static NetMode     g_mode = NET_AP;
@@ -103,7 +104,7 @@ void netBegin(const Settings& s, void (*onProgress)(const char*)) {
         // Discoverable usage-push service so the Mac usage daemon can find and
         // push to every SmallTV-ultra on the LAN (no hardcoded host).
         MDNS.addService("aiusage", "tcp", 80);
-        MDNS.addServiceTxt("aiusage", "tcp", "id",     g_hostname.c_str());
+        MDNS.addServiceTxt("aiusage", "tcp", "id",     g_security.deviceId());
         MDNS.addServiceTxt("aiusage", "tcp", "ver",    FW_VERSION);
         MDNS.addServiceTxt("aiusage", "tcp", "path",   "/api/usage");
         MDNS.addServiceTxt("aiusage", "tcp", "schema", "1");
