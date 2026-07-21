@@ -22,8 +22,7 @@ struct ProviderUsage {
   UsageWindow fiveHour;
   UsageWindow weekly;
   bool        everReceived;   // has any valid push landed for this provider?
-  uint32_t    lastOkMs;       // millis() of the last accepted push (render-time)
-  uint32_t    lastOkUnix;     // Unix epoch seconds of the last push (0 if unknown)
+  uint32_t    lastOkMs;       // millis() of the last accepted push
 };
 
 class UsageStore {
@@ -31,7 +30,7 @@ class UsageStore {
   void begin();
   // Apply one provider's push. `json` is the raw POST body. Returns true if the
   // body validated AND at least one window landed (per-provider last-good is
-  // untouched on validation failure). On success updates lastOkMs + persists.
+  // untouched on validation failure). On success updates lastOkMs.
   bool applyPush(UsageProvider p, const String& json);
   // Snapshot read for rendering. `providerTheme` returns the spec palette color.
   const ProviderUsage& read(UsageProvider p) const;
@@ -41,8 +40,6 @@ class UsageStore {
   void    serializeOverview(String& out) const;
  private:
   ProviderUsage data_[PROVIDER_COUNT];
-  void    persist();           // write snapshot to LittleFS /usage.json
-  void    restore();           // read snapshot back at boot
 };
 
 extern UsageStore g_usageStore;

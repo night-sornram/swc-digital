@@ -79,10 +79,10 @@ static String computeH1(const String& pairkey) {
 // off the screen, joins the SmallTV-Setup AP, then POSTs the pair key they
 // chose (or that the Mac `pair` command generated for them).
 static void handlePair() {
-  // Hard guard: AP mode + unpaired. In STA mode this route is unreachable
-  // (it is registered but always 404s below). Re-check anyway in case of
-  // captive-portal weirdness.
-  if (netMode() != NET_AP) { server.send(404, "text/plain", "Not found"); return; }
+  // Pair is allowed when: (a) in AP mode (the documented setup/recovery flow),
+  // OR (b) in STA mode while still unpaired (the device just OTA'd and kept
+  // its Wi-Fi credentials, so it never entered AP mode but is still open).
+  // Once paired, this route always 409s — to re-pair, factory-reset first.
   if (g_security.paired() || g_security.hasH1()) {
     server.send(409, "application/json", "{\"ok\":false,\"error\":\"already paired\"}");
     return;

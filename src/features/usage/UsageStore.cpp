@@ -1,10 +1,6 @@
 #include "UsageStore.h"
 #include "../../config.h"
 #include <ArduinoJson.h>
-#include <LittleFS.h>
-#include <time.h>   // time()
-
-static const char* USAGE_PATH = "/usage.json";
 
 UsageStore g_usageStore;
 
@@ -18,70 +14,6 @@ void UsageStore::begin() {
     data_[i].weekly.resetMin     = 0xFFFF;
     data_[i].everReceived        = false;
     data_[i].lastOkMs            = 0;
-    data_[i].lastOkUnix          = 0;
-  }
-  restore();
-}
-
-// Persist the snapshot to LittleFS so a reboot does not blank the screen for
-// ~60 s while the Mac service's next poll arrives. lastOkUnix is absolute so
-// it survives reboot; lastOkMs is rewritten on restore from age = now - lastOkUnix.
-void UsageStore::persist() {
-  JsonDocument doc;
-  doc["schema"] = 1;
-  JsonArray arr = doc["providers"].to<JsonArray>();
-  for (uint8_t i = 0; i < PROVIDER_COUNT; i++) {
-    JsonObject po = arr.add<JsonObject>();
-    po["everReceived"] = data_[i].everReceived;
-    po["lastOkUnix"]   = data_[i].lastOkUnix;
-    if (data_[i].fiveHour.available) {
-      po["fh_pct"]   = data_[i].fiveHour.usedPct;
-      po["fh_reset"] = (int32_t)data_[i].fiveHour.resetMin;
-    }
-    if (data_[i].weekly.available) {
-      po["wk_pct"]   = data_[i].weekly.usedPct;
-      po["wk_reset"] = (int32_t)data_[i].weekly.resetMin;
-    }
-  }
-  File f = LittleFS.open(USAGE_PATH, "w");
-  if (!f) return;
-  serializeJson(doc, f);
-  f.close();
-}
-
-void UsageStore::restore() {
-  File f = LittleFS.open(USAGE_PATH, "r");
-  if (!f) return;
-  JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, f);
-  f.close();
-  if (err) return;
-  JsonArrayConst arr = doc["providers"].as<JsonArrayConst>();
-  if (!arr) return;
-  uint8_t i = 0;
-  for (JsonObjectConst po : arr) {
-    if (i >= PROVIDER_COUNT) break;
-    data_[i].everReceived = po["everReceived"] | false;
-    data_[i].lastOkUnix   = po["lastOkUnix"] | (uint32_t)0;
-    if (po["fh_pct"].is<int>()) {
-      data_[i].fiveHour.usedPct   = (uint8_t)(int)po["fh_pct"];
-      data_[i].fiveHour.resetMin  = po["fh_reset"].is<int>() ? (uint16_t)(int)po["fh_reset"] : 0xFFFF;
-      data_[i].fiveHour.available = true;
-    }
-    if (po["wk_pct"].is<int>()) {
-      data_[i].weekly.usedPct   = (uint8_t)(int)po["wk_pct"];
-      data_[i].weekly.resetMin  = po["wk_reset"].is<int>() ? (uint16_t)(int)po["wk_reset"] : 0xFFFF;
-      data_[i].weekly.available = true;
-    }
-    // Reconstruct lastOkMs from Unix time so ageMs()/stale() return correct
-    // values immediately after boot. If the clock is not synced yet (time() < now),
-    // lastOkMs stays 0 -> stale() returns true until NTP lands.
-    uint32_t now_un = (uint32_t)time(nullptr);
-    if (data_[i].lastOkUnix && now_un > data_[i].lastOkUnix) {
-      uint32_t age_s = now_un - data_[i].lastOkUnix;
-      data_[i].lastOkMs = millis() - age_s * 1000UL;
-    }
-    i++;
   }
 }
 
@@ -150,9 +82,6 @@ bool UsageStore::applyPush(UsageProvider p, const String& json) {
   data_[p]              = next;
   data_[p].everReceived = true;
   data_[p].lastOkMs     = millis();
-  uint32_t now_un = (uint32_t)time(nullptr);
-  data_[p].lastOkUnix   = (now_un > 1700000000) ? now_un : 0;  // 0 if clock not synced
-  persist();
   return true;
 }
 
