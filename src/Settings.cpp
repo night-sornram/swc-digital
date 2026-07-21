@@ -4,6 +4,20 @@
 
 static const char* CONFIG_PATH = "/config.json";
 
+// 12-char alphanumeric (no ambiguous chars like O/0/I/1) for the Setup AP.
+// Uses ESP.getChipId() + micros() as entropy; NOT cryptographic, but the
+// threat model is "friend on the same Wi-Fi", not a targeted attacker.
+static String randomApPass() {
+  static const char ALPHABET[] = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  uint32_t seed = ESP.getChipId() ^ micros() ^ (millis() << 8);
+  randomSeed(seed);
+  String out;
+  for (uint8_t i = 0; i < 12; i++) {
+    out += (char)ALPHABET[random(sizeof(ALPHABET) - 1)];
+  }
+  return out;
+}
+
 // ===========================================================================
 // Usage slice
 // ===========================================================================
@@ -85,6 +99,12 @@ void Settings::setDefaults() {
   }
   apSsid  = DEFAULT_AP_SSID;
   apPass  = DEFAULT_AP_PASS;
+  if (apPass.length() < 8) {
+    // Spec v3.1: a fresh/unpaired device must show a random ≥12-char AP
+    // password on screen so the owner can read it; an open AP would let
+    // any neighbour pair first. This runs once on a truly fresh chip.
+    apPass = randomApPass();
+  }
   pairedH1 = "";   // unpaired until /api/pair runs (Plan 2 Task 4)
   // Unique per device so several SmallTVs on one network don't collide on
   // mDNS out of the box. A hostname saved in config.json overrides this.
