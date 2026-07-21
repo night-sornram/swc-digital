@@ -14,7 +14,9 @@ enum UsageProvider : uint8_t {
   PROVIDER_CODEX  = 0,
   PROVIDER_ZAI    = 1,
   PROVIDER_SYSTEM = 2,
-  PROVIDER_COUNT  = 3,
+  PROVIDER_VITALS = 3,
+  PROVIDER_WEATHER= 4,
+  PROVIDER_COUNT  = 5,
 };
 
 struct UsageWindow {
@@ -32,6 +34,14 @@ struct ProviderUsage {
   // optional JSON field so the 2-window schema stays the same for the
   // AI providers (which never set it).
   uint8_t     extraPct;       // 0..100, or 0xFF when unavailable
+  // VITALS + WEATHER optional fields (0xFF / 0x80 / 0xFFFF = N/A).
+  // VITALS: tempC=Mac temp (0x80=N/A), batteryPct, uptimeMin.
+  // WEATHER: tempC=temp_min, extraPct=temp_max, weatherCode (WMO), aqiPm25.
+  int8_t      tempC;          // signed: -127..127; 0x80 (-128) = N/A
+  uint8_t     batteryPct;     // 0..100, 0xFF = N/A
+  uint16_t    uptimeMin;      // 0..65535, 0xFFFF = N/A
+  uint8_t     weatherCode;    // WMO 0..99, 0xFF = N/A
+  uint8_t     aqiPm25;        // 0..255, 0xFF = N/A
 };
 
 class UsageStore {
