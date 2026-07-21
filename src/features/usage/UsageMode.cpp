@@ -107,6 +107,98 @@ static void drawSystemCard(int16_t y, const char* label, uint8_t pct, bool avail
   }
 }
 
+// VITALS half-width card (108 wide) for the 2×3 grid. Same visual language
+// as drawSystemCard but compact: label top-left, big % top-right, slim bar.
+// For temp metrics, isTemp=true prints a degree symbol instead of % and no bar.
+static void drawVitalsCard(int16_t x, int16_t y, const char* label,
+                           uint8_t pct, bool avail, bool isTemp,
+                           uint16_t providerColor, bool stale) {
+  auto* d = gfxDev();
+  d->fillRoundRect(x, y, 108, 56, 5, USAGE_COLOR_CARD);
+  d->setTextColor(USAGE_COLOR_MUTED);
+  d->setTextSize(2);
+  d->setCursor(x + 8, y + 6);
+  d->print(label);
+  d->setTextSize(3);
+  if (avail) {
+    d->setTextColor(barColorFor(pct, providerColor, stale));
+    char buf[10];
+    if (isTemp) {
+      // Degree symbol: the built-in font's degree (0xF8 in some codepages) may
+      // not render. Use a lowercase 'c' suffix as a safe fallback: "54c".
+      // (Verified visually in integration test — adjust if wrong.)
+      snprintf(buf, sizeof(buf), "%dc", (int)(int8_t)pct);
+    } else {
+      snprintf(buf, sizeof(buf), "%u%%", pct);
+    }
+    int16_t tw = gfxTextW(buf, 3);
+    d->setCursor(x + 100 - tw, y + 6);
+    d->print(buf);
+  } else {
+    d->setTextColor(USAGE_COLOR_MUTED);
+    const char* na = "--";
+    int16_t tw = gfxTextW(na, 3);
+    d->setCursor(x + 100 - tw, y + 6);
+    d->print(na);
+  }
+  // Slim bar (only for % metrics, not temp).
+  if (!isTemp) {
+    const int16_t by = y + 44, bh = 6, bx = x + 8, bw = 92;
+    d->fillRoundRect(bx, by, bw, bh, 3, USAGE_COLOR_BG);
+    if (avail && pct > 0) {
+      int16_t fw = (int16_t)(bw * (uint32_t)pct / 100UL);
+      if (fw < 3) fw = 3;
+      d->fillRoundRect(bx, by, fw, bh, 3, barColorFor(pct, providerColor, stale));
+    }
+  }
+}
+
+// VITALS-only: full-width banner with battery + uptime. Two cells side by
+// side in one 224-wide card, h=30.
+static void drawVitalsBanner(int16_t y, uint8_t batteryPct, uint16_t uptimeMin,
+                             bool stale) {
+  auto* d = gfxDev();
+  d->fillRoundRect(8, y, 224, 30, 5, USAGE_COLOR_CARD);
+  // Battery cell (left).
+  d->setTextSize(1);
+  d->setTextColor(USAGE_COLOR_MUTED);
+  d->setCursor(18, y + 10);
+  d->print("BAT");
+  d->setTextSize(2);
+  if (batteryPct != 0xFF) {
+    d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%u%%", batteryPct);
+    d->setCursor(48, y + 8);
+    d->print(buf);
+  } else {
+    d->setTextColor(USAGE_COLOR_MUTED);
+    d->setCursor(48, y + 8);
+    d->print("--");
+  }
+  // Uptime cell (right). Compact d/h/m.
+  d->setTextSize(1);
+  d->setTextColor(USAGE_COLOR_MUTED);
+  d->setCursor(140, y + 10);
+  d->print("UP");
+  d->setTextSize(2);
+  d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
+  if (uptimeMin != 0xFFFF) {
+    char buf[16];
+    uint16_t m = uptimeMin;
+    uint16_t days = m / 1440; m -= days * 1440;
+    uint16_t hrs  = m / 60;   m -= hrs * 60;
+    if (days)        snprintf(buf, sizeof(buf), "%ud %uh", days, hrs);
+    else if (hrs)    snprintf(buf, sizeof(buf), "%uh %um", hrs, m);
+    else             snprintf(buf, sizeof(buf), "%um", m);
+    d->setCursor(162, y + 8);
+    d->print(buf);
+  } else {
+    d->setCursor(162, y + 8);
+    d->print("--");
+  }
+}
+
 void UsageMode::begin(const Settings& s) {
   needsFullRedraw_ = true;
   // Default the active provider from settings.mode: CODEX/ZAI/SYSTEM pick
@@ -188,6 +280,52 @@ void UsageMode::service(const Settings& s) {
     }
     // Age row (same as AI providers).
     return;   // fall through below is the AI-provider path; SYSTEM returns here.
+  }
+
+  // ---- VITALS: Grid 2×3 (CPU/RAM/SSD/TEMP cards + BAT/UP banner) ----
+  if (active_ == PROVIDER_VITALS) {
+    if (needsFullRedraw_) {
+      needsFullRedraw_ = false;
+      auto* d = gfxDev();
+      d->fillScreen(USAGE_COLOR_BG);
+      d->fillRect(0, 0, 240, 35, USAGE_COLOR_CARD);
+      d->setTextColor(providerColor);
+      d->setTextSize(3);
+      d->setCursor(10, 8);
+      d->print("MAC");
+      d->setTextSize(2);
+      const char* pill = stale ? "STALE" : "LIVE";
+      d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
+      int16_t tw = gfxTextW(pill, 2);
+      d->setCursor(232 - tw, 10);
+      d->print(pill);
+      // Row 1: CPU (left) / RAM (right).
+      drawVitalsCard(8,   42,  "CPU",  pu.fiveHour.usedPct, pu.fiveHour.available, false, providerColor, stale);
+      drawVitalsCard(124, 42,  "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
+      // Row 2: SSD (left) / TEMP (right).
+      bool ssdAvail = (pu.extraPct != 0xFF);
+      drawVitalsCard(8,   104, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
+      bool tempAvail = (pu.tempC != (int8_t)0x80);
+      drawVitalsCard(124, 104, "TEMP", (uint8_t)pu.tempC,   tempAvail,             true,  providerColor, stale);
+      // Banner: battery + uptime.
+      drawVitalsBanner(166, pu.batteryPct, pu.uptimeMin, stale);
+      lastFiveHourOk_[active_] = pu.lastOkMs;
+      lastStale_[active_]      = stale;
+      return;
+    }
+    // Partial: data changed → repaint the 4 cards + banner.
+    if (pu.lastOkMs != lastFiveHourOk_[active_] || stale != lastStale_[active_]) {
+      drawVitalsCard(8,   42,  "CPU",  pu.fiveHour.usedPct, pu.fiveHour.available, false, providerColor, stale);
+      drawVitalsCard(124, 42,  "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
+      bool ssdAvail = (pu.extraPct != 0xFF);
+      drawVitalsCard(8,   104, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
+      bool tempAvail = (pu.tempC != (int8_t)0x80);
+      drawVitalsCard(124, 104, "TEMP", (uint8_t)pu.tempC,   tempAvail,             true,  providerColor, stale);
+      drawVitalsBanner(166, pu.batteryPct, pu.uptimeMin, stale);
+      lastFiveHourOk_[active_] = pu.lastOkMs;
+      lastStale_[active_]      = stale;
+    }
+    return;
   }
 
   // Full redraw path.
