@@ -150,7 +150,8 @@ static void drawRadar(const Settings& s) {
         gfx->print(a.callsign);
         if (a.altFt > 0) {
           char fl[8];
-          snprintf(fl, sizeof(fl), "FL%03d", (int)(a.altFt / 100));
+          const int flightLevel = (int)constrain(a.altFt / 100.0f, 0.0f, 999.0f);
+          snprintf(fl, sizeof(fl), "FL%03d", flightLevel);
           gfx->setTextSize(1);
           gfx->setCursor(box.x, y + (txt == 1 ? 6 : 10));
           gfx->print(fl);
