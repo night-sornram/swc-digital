@@ -37,6 +37,19 @@ ZAI_BOTH = {
     ]}
 }
 
+# z.ai: realistic 5H-only response (epoch ms nextResetTime, the real prod format).
+# 60 minutes ahead => nextResetTime = now + 60*60*1000. Computed in the test.
+# Weekly window is absent (current production account has none).
+def ZAI_5H_EPOCH(extra_ms: int = 3600_000, pct: float = 34.0):
+    import time
+    return {
+        "code": 200, "msg": "Operation successful", "success": True,
+        "data": {"limits": [
+            {"type": "TOKENS_LIMIT", "unit": 3, "number": 5, "percentage": pct,
+             "nextResetTime": int(time.time() * 1000) + extra_ms},
+        ], "level": "pro"}
+    }
+
 # z.ai: missing quota (no limits list).
 ZAI_EMPTY = {"data": {}}
 

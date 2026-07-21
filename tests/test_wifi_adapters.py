@@ -93,6 +93,15 @@ class ZaiAdapterTests(unittest.TestCase):
         self.assertEqual(out["five_hour"]["reset_min"], 0)   # expired clamped
         self.assertEqual(out["weekly"]["used_pct"], 100)
 
+    def test_epoch_ms_reset_time(self):
+        # z.ai's actual production response uses nextResetTime as epoch ms, not
+        # ISO string. 60 min ahead => reset_min ~60.
+        with self._patch_fetch(F.ZAI_5H_EPOCH(extra_ms=3600_000)):
+            out = zai_wifi_adapter.fetch()
+        self.assertEqual(out["five_hour"]["used_pct"], 34)
+        self.assertIn(out["five_hour"]["reset_min"], (59, 60, 61))
+        self.assertIsNone(out["weekly"])
+
     def test_sends_configured_authorization_value_verbatim(self):
         captured = {}
 
