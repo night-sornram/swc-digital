@@ -138,36 +138,35 @@ static void drawVitalsCard(int16_t x, int16_t y, const char* label,
                            uint8_t pct, bool avail, bool isTemp,
                            uint16_t providerColor, bool stale) {
   auto* d = gfxDev();
-  d->fillRoundRect(x, y, 108, 56, 5, USAGE_COLOR_CARD);
+  d->fillRoundRect(x, y, 108, 70, 5, USAGE_COLOR_CARD);
+  // Label (top).
   d->setTextColor(USAGE_COLOR_MUTED);
   d->setTextSize(2);
-  d->setCursor(x + 8, y + 6);
+  d->setCursor(x + 8, y + 4);
   d->print(label);
+  // Big number (below label, right-aligned).
   d->setTextSize(3);
   if (avail) {
     d->setTextColor(barColorFor(pct, providerColor, stale));
     char buf[10];
     if (isTemp) {
-      // Degree symbol: the built-in font's degree (0xF8 in some codepages) may
-      // not render. Use a lowercase 'c' suffix as a safe fallback: "54c".
-      // (Verified visually in integration test — adjust if wrong.)
       snprintf(buf, sizeof(buf), "%dc", (int)(int8_t)pct);
     } else {
       snprintf(buf, sizeof(buf), "%u%%", pct);
     }
     int16_t tw = gfxTextW(buf, 3);
-    d->setCursor(x + 100 - tw, y + 6);
+    d->setCursor(x + 100 - tw, y + 22);
     d->print(buf);
   } else {
     d->setTextColor(USAGE_COLOR_MUTED);
     const char* na = "--";
     int16_t tw = gfxTextW(na, 3);
-    d->setCursor(x + 100 - tw, y + 6);
+    d->setCursor(x + 100 - tw, y + 22);
     d->print(na);
   }
   // Slim bar (only for % metrics, not temp).
   if (!isTemp) {
-    const int16_t by = y + 44, bh = 6, bx = x + 8, bw = 92;
+    const int16_t by = y + 54, bh = 6, bx = x + 8, bw = 92;
     d->fillRoundRect(bx, by, bw, bh, 3, USAGE_COLOR_BG);
     if (avail && pct > 0) {
       int16_t fw = (int16_t)(bw * (uint32_t)pct / 100UL);
@@ -322,16 +321,16 @@ void UsageMode::service(const Settings& s) {
       int16_t tw = gfxTextW(pill, 2);
       d->setCursor(232 - tw, 10);
       d->print(pill);
-      // Row 1: CPU (left) / RAM (right).
+      // Row 1: CPU (left) / RAM (right). Cards 70px tall.
       drawVitalsCard(8,   42,  "CPU",  pu.fiveHour.usedPct, pu.fiveHour.available, false, providerColor, stale);
       drawVitalsCard(124, 42,  "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
       // Row 2: SSD (left) / TEMP (right).
       bool ssdAvail = (pu.extraPct != 0xFF);
-      drawVitalsCard(8,   104, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
+      drawVitalsCard(8,   118, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
       bool tempAvail = (pu.tempC != (int8_t)0x80);
-      drawVitalsCard(124, 104, "TEMP", (uint8_t)pu.tempC,   tempAvail,             true,  providerColor, stale);
+      drawVitalsCard(124, 118, "TEMP", (uint8_t)pu.tempC,   tempAvail,             true,  providerColor, stale);
       // Banner: battery + uptime.
-      drawVitalsBanner(166, pu.batteryPct, pu.uptimeMin, stale);
+      drawVitalsBanner(194, pu.batteryPct, pu.uptimeMin, stale);
       lastFiveHourOk_[active_] = pu.lastOkMs;
       lastStale_[active_]      = stale;
       return;
@@ -341,34 +340,31 @@ void UsageMode::service(const Settings& s) {
       drawVitalsCard(8,   42,  "CPU",  pu.fiveHour.usedPct, pu.fiveHour.available, false, providerColor, stale);
       drawVitalsCard(124, 42,  "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
       bool ssdAvail = (pu.extraPct != 0xFF);
-      drawVitalsCard(8,   104, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
+      drawVitalsCard(8,   118, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
       bool tempAvail = (pu.tempC != (int8_t)0x80);
-      drawVitalsCard(124, 104, "TEMP", (uint8_t)pu.tempC,   tempAvail,             true,  providerColor, stale);
-      drawVitalsBanner(166, pu.batteryPct, pu.uptimeMin, stale);
+      drawVitalsCard(124, 118, "TEMP", (uint8_t)pu.tempC,   tempAvail,             true,  providerColor, stale);
+      drawVitalsBanner(194, pu.batteryPct, pu.uptimeMin, stale);
       lastFiveHourOk_[active_] = pu.lastOkMs;
       lastStale_[active_]      = stale;
     }
     return;
   }
 
-  // ---- WEATHER: Clock hero + Mini calendar ----
-  // Three independent dirty regions: clock (per-minute), weather+AQI (per-push),
-  // week-strip calendar (per-day). Never fillScreen per tick. Full redraw only
-  // on mode enter.
+  // ---- WEATHER: Clock + Date + Temp + Condition ----
+  // Two dirty regions: clock (per-minute), weather (per-push).
+  // No AQI, no calendar — clean time+weather screen.
   if (active_ == PROVIDER_WEATHER) {
-    // Local time from device NTP (not pushed).
     struct tm lt;
     bool synced = clockNow(lt);
     int hh = lt.tm_hour;
     int mm = lt.tm_min;
-    int dd = lt.tm_mday;
 
     if (needsFullRedraw_ || weatherFirstDraw_) {
       needsFullRedraw_   = false;
       weatherFirstDraw_  = false;
       auto* d = gfxDev();
       d->fillScreen(USAGE_COLOR_BG);
-      // Title bar: city label from settings (defaults to "BKK" if empty).
+      // Title bar.
       d->fillRect(0, 0, 240, 35, USAGE_COLOR_CARD);
       d->setTextColor(providerColor);
       d->setTextSize(3);
@@ -380,132 +376,72 @@ void UsageMode::service(const Settings& s) {
       int16_t tw = gfxTextW(pill, 2);
       d->setCursor(232 - tw, 10);
       d->print(pill);
-      // Force all three regions to paint by seeding last values.
       lastClockMin_ = 0xFF;
-      lastClockDay_ = 0xFF;
       lastFiveHourOk_[active_] = 0;
     }
 
-    // Region 1: Clock (repaint only when minute changes).
+    // Region 1: Clock + date (repaint only when minute changes).
     if (synced && (uint8_t)mm != lastClockMin_) {
       auto* d = gfxDev();
-      // Clear clock area (y=42..105).
-      d->fillRect(0, 42, 240, 64, USAGE_COLOR_BG);
-      // Time HH:MM centered, size 4.
+      d->fillRect(0, 42, 240, 80, USAGE_COLOR_BG);
+      // Time HH:MM centered, big.
       d->setTextColor(providerColor);
-      d->setTextSize(4);
+      d->setTextSize(5);
       char tb[8];
       snprintf(tb, sizeof(tb), "%02d:%02d", hh, mm);
-      int16_t tw = gfxTextW(tb, 4);
-      d->setCursor((240 - tw) / 2, 50);
+      int16_t tw = gfxTextW(tb, 5);
+      d->setCursor((240 - tw) / 2, 48);
       d->print(tb);
-      // Date below, size 2, muted.
-      int mon = lt.tm_mon + 1;    // 1..12
+      // Date below.
+      int mon = lt.tm_mon + 1;
       int yr  = lt.tm_year + 1900;
-      int dow = lt.tm_wday;       // 0=Sun..6=Sat
+      int dd  = lt.tm_mday;
+      int dow = lt.tm_wday;
       static const char* DOWS[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
       static const char* MONS[] = {"Jan","Feb","Mar","Apr","May","Jun",
                                    "Jul","Aug","Sep","Oct","Nov","Dec"};
       d->setTextColor(USAGE_COLOR_MUTED);
       d->setTextSize(2);
       char db[24];
-      snprintf(db, sizeof(db), "%s %d %s %d",
+      snprintf(db, sizeof(db), "%s  %d %s %d",
                (dow>=0&&dow<=6)?DOWS[dow]:"---", dd,
                (mon>=1&&mon<=12)?MONS[mon-1]:"---", yr);
       int16_t dw = gfxTextW(db, 2);
-      d->setCursor((240 - dw) / 2, 90);
+      d->setCursor((240 - dw) / 2, 100);
       d->print(db);
       lastClockMin_ = (uint8_t)mm;
     } else if (!synced && lastClockMin_ != 0xFE) {
-      // Not synced: show waiting text once.
       auto* d = gfxDev();
-      d->fillRect(0, 42, 240, 64, USAGE_COLOR_BG);
+      d->fillRect(0, 42, 240, 80, USAGE_COLOR_BG);
       d->setTextColor(USAGE_COLOR_MUTED);
       d->setTextSize(2);
       const char* w = "waiting NTP...";
       int16_t tw = gfxTextW(w, 2);
-      d->setCursor((240 - tw) / 2, 65);
+      d->setCursor((240 - tw) / 2, 72);
       d->print(w);
       lastClockMin_ = 0xFE;
     }
 
-    // Region 2: Weather + AQI (repaint when new push lands).
+    // Region 2: Temp + condition (repaint when new push lands).
     if (pu.lastOkMs != lastFiveHourOk_[active_]) {
       auto* d = gfxDev();
-      // Card y=112..160.
-      d->fillRoundRect(8, 112, 224, 48, 5, USAGE_COLOR_CARD);
-      // Left half: temp + condition.
+      d->fillRect(0, 128, 240, 60, USAGE_COLOR_BG);
+      // Big temp centered.
       d->setTextColor(providerColor);
-      d->setTextSize(3);
+      d->setTextSize(5);
       char tb[8];
-      snprintf(tb, sizeof(tb), "%uc", pu.fiveHour.usedPct);  // temp °C (use 'c' suffix)
-      d->setCursor(18, 116);
+      snprintf(tb, sizeof(tb), "%uc", pu.fiveHour.usedPct);
+      int16_t tw = gfxTextW(tb, 5);
+      d->setCursor((240 - tw) / 2, 130);
       d->print(tb);
+      // Condition label below, centered.
       d->setTextColor(USAGE_COLOR_MUTED);
-      d->setTextSize(2);
-      d->setCursor(18, 142);
-      if (pu.weatherCode != 0xFF) d->print(wmoLabel(pu.weatherCode));
-      else                         d->print("--");
-      // Divider.
-      d->drawFastVLine(120, 116, 40, USAGE_COLOR_BG);
-      // Right half: AQI index + PM2.5.
-      uint8_t eaqi = pu.weekly.usedPct;
-      d->setTextColor(aqiColor(eaqi));
       d->setTextSize(3);
-      char ab[8];
-      snprintf(ab, sizeof(ab), "%u", eaqi);
-      int16_t aw = gfxTextW(ab, 3);
-      d->setCursor(232 - aw, 116);
-      d->print(ab);
-      d->setTextSize(2);
-      d->setTextColor(USAGE_COLOR_MUTED);
-      d->setCursor(130, 116);
-      d->print("AQI");
-      if (pu.aqiPm25 != 0xFF) {
-        char pb[16];
-        snprintf(pb, sizeof(pb), "PM %u", pu.aqiPm25);
-        d->setCursor(130, 142);
-        d->print(pb);
-      }
+      const char* cond = (pu.weatherCode != 0xFF) ? wmoLabel(pu.weatherCode) : "--";
+      int16_t cw = gfxTextW(cond, 3);
+      d->setCursor((240 - cw) / 2, 168);
+      d->print(cond);
       lastFiveHourOk_[active_] = pu.lastOkMs;
-    }
-
-    // Region 3: Mini calendar week strip (repaint when day changes).
-    if (synced && (uint8_t)dd != lastClockDay_) {
-      auto* d = gfxDev();
-      // Card y=166..226.
-      d->fillRoundRect(8, 166, 224, 60, 5, USAGE_COLOR_CARD);
-      int dow = lt.tm_wday;   // 0=Sun..6=Sat
-      // We want Mon-Sun strip with today highlighted.
-      // Offset from Monday: (dow+6)%7
-      int off = (dow + 6) % 7;
-      static const char* DOW3 = "MTWTFSS";
-      d->setTextSize(2);
-      for (int i = 0; i < 7; i++) {
-        int x = 14 + i * 31;
-        // Day number (size 2 = readable).
-        int slotDay = dd - off + i;
-        bool isToday = (i == off);
-        if (isToday) {
-          d->fillRoundRect(x - 2, 178, 28, 24, 3, providerColor);
-          d->setTextColor(USAGE_COLOR_BG);
-        } else {
-          d->setTextColor(USAGE_COLOR_TEXT);
-        }
-        char db[4];
-        snprintf(db, sizeof(db), "%d", slotDay);
-        int16_t dw = gfxTextW(db, 2);
-        d->setCursor(x + (28 - dw) / 2, 180);
-        d->print(db);
-        // DOW label (small, under the number).
-        d->setTextSize(1);
-        d->setTextColor(USAGE_COLOR_MUTED);
-        char dl[2] = {DOW3[i], 0};
-        d->setCursor(x + 10, 204);
-        d->print(dl);
-        d->setTextSize(2);
-      }
-      lastClockDay_ = (uint8_t)dd;
     }
 
     return;

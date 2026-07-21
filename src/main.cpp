@@ -100,6 +100,11 @@ void appInvalidate() {
   for (size_t i = 0; i < kModeCount; i++) kModes[i]->invalidate(g_settings);
 }
 
+// Called by the web portal after settings are applied: switch the active display
+// provider to match the new mode setting (e.g. vitals, weather). Without this,
+// changing mode via the WebUI only takes effect after a reboot.
+void appApplyMode() { applyMode(g_settings); }
+
 static void bootProgress(const char* msg) {
   gfxBoot("SmallTV", msg);
 }

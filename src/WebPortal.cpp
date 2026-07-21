@@ -16,6 +16,7 @@
 extern void appInvalidate();
 extern const char* appResetReason();   // last reset reason (diagnostics)
 extern void appApplyBrightness();   // main.cpp: re-resolve effective brightness now
+extern void appApplyMode();         // main.cpp: switch active display provider
 
 static WebServerClass server(80);
 static Settings*        S = nullptr;
@@ -189,6 +190,7 @@ static void handlePostConfig() {
   saveSettings(*S);
 
   // Live apply (no reboot needed for these)
+  appApplyMode();           // switch display provider to match the new mode setting
   clockReapply(*S);         // re-arm SNTP iff the timezone changed
   appApplyBrightness();     // apply effective brightness (respects night/auto/manual)
   if (S->rotation != oldRot) gfxSetRotation(S->rotation);
