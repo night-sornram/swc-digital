@@ -29,6 +29,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import codex_wifi_adapter
 import zai_wifi_adapter
 import system_stats_adapter
+import vitals_adapter
+import weather_adapter
 import aiusage_mdns
 import device_client
 
@@ -174,6 +176,22 @@ def cmd_run(args) -> int:
     zai_state    = ProviderState(name="zai",    fetch=zai_wifi_adapter.fetch)
     system_state = ProviderState(name="system", fetch=system_stats_adapter.fetch)
 
+    # Weather fetches every 600 s (10 min) — changes slowly, saves API calls.
+    weather_lat = float((cfg.get("weather", {}) or {}).get("lat", 13.7563))
+    weather_lon = float((cfg.get("weather", {}) or {}).get("lon", 100.5018))
+    weather_last_fetch = [0.0]   # mutable holder for the closure
+
+    def weather_fetch():
+        # Throttle: only actually fetch every 600 s.
+        now = time.time()
+        if now - weather_last_fetch[0] < 600:
+            return None   # signal "skip this push" — handled by _step_provider
+        weather_last_fetch[0] = now
+        return weather_adapter.fetch(weather_lat, weather_lon)
+
+    vitals_state  = ProviderState(name="vitals",  fetch=vitals_adapter.fetch)
+    weather_state = ProviderState(name="weather", fetch=weather_fetch)
+
     # Build the Digest opener once we have a pairkey. Cached per device id.
     opener_cache: dict[str, object] = {}
     def opener_for(url_id_pair):
@@ -205,7 +223,8 @@ def cmd_run(args) -> int:
             if getattr(args, "once", False):
                 return 2
             time.sleep(interval_s); continue
-        for state in (codex_state, zai_state, system_state):
+        for state in (codex_state, zai_state, system_state,
+                      vitals_state, weather_state):
             _step_provider(state, targets, interval_s, opener_for, dev_id)
         if getattr(args, "once", False):
             return 0
@@ -226,6 +245,8 @@ def _step_provider(state, targets, interval_s, opener_for, expected_id) -> None:
         if state.consecutive_failures >= 2:
             state.backoff_min = 2; state.consecutive_failures = 0
         return
+    if windows is None:
+        return   # throttled skip (weather 600 s cadence)
     body = _make_body(state.name, windows)
     saw_auth_fail = False
     any_ok = False

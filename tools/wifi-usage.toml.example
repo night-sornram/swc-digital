@@ -21,3 +21,10 @@ urls = []
 # Pairing keys live in macOS Keychain (service com.night.swc-digital.device-<id>,
 # account "pairkey"), NOT in this file. Run `wifi_usage_service.py pair` to
 # generate one and store it. This file never holds credentials.
+
+# ---- Weather adapter (3.3.0) ----
+# Coordinates used by weather_adapter.py to fetch open-meteo data.
+# Keep in sync with the device's WebUI Weather settings (informational there).
+[weather]
+lat = 13.7563    # Bangkok
+lon = 100.5018
