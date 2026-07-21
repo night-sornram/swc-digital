@@ -2,6 +2,7 @@
 #include "UsageStore.h"
 #include "../../config.h"
 #include "../../Gfx.h"
+#include "../../Clock.h"            // clockNow() / clockSynced() for the WEATHER branch
 #include <Arduino_GFX_Library.h>   // full Arduino_GFX definition (Gfx.h only fwd-declares it)
 
 UsageMode g_usageMode;
@@ -16,6 +17,29 @@ static uint16_t barColorFor(uint8_t pct, uint16_t providerColor, bool stale) {
   if (pct >= 90) return USAGE_COLOR_CRIT;
   if (pct >= 70) return USAGE_COLOR_WARN;
   return providerColor;
+}
+
+// WMO weather code → 3-char label (built-in font lacks weather glyphs).
+// See open-meteo docs: 0=clear, 1-3=cloudy, 45-48=fog, 51-67=rain,
+// 71-77=snow, 80-82=showers, 95-99=thunderstorm.
+static const char* wmoLabel(uint8_t code) {
+  if (code == 0)                       return "CLR";
+  if (code >= 1 && code <= 3)          return "CLD";
+  if (code >= 45 && code <= 48)        return "FOG";
+  if (code >= 51 && code <= 67)        return "RAIN";
+  if (code >= 71 && code <= 77)        return "SNOW";
+  if (code >= 80 && code <= 82)        return "SHR";
+  if (code >= 95)                      return "STM";
+  return "--";
+}
+
+// AQI color by european_aqi band.
+static uint16_t aqiColor(uint8_t eaqi) {
+  if (eaqi < 20)  return 0x150F;   // green #10A37F
+  if (eaqi < 40)  return 0xBDFD;   // teal #36D6C4
+  if (eaqi < 60)  return 0xFD84;   // amber #FFB020
+  if (eaqi < 80)  return 0xFC80;   // orange
+  return            0xF28A;        // red #F05252
 }
 
 static void drawCard(int16_t y, const char* label, const UsageWindow& w,
@@ -325,6 +349,164 @@ void UsageMode::service(const Settings& s) {
       lastFiveHourOk_[active_] = pu.lastOkMs;
       lastStale_[active_]      = stale;
     }
+    return;
+  }
+
+  // ---- WEATHER: Clock hero + Mini calendar ----
+  // Three independent dirty regions: clock (per-minute), weather+AQI (per-push),
+  // week-strip calendar (per-day). Never fillScreen per tick. Full redraw only
+  // on mode enter.
+  if (active_ == PROVIDER_WEATHER) {
+    // Local time from device NTP (not pushed).
+    struct tm lt;
+    bool synced = clockNow(lt);
+    int hh = lt.tm_hour;
+    int mm = lt.tm_min;
+    int dd = lt.tm_mday;
+
+    if (needsFullRedraw_ || weatherFirstDraw_) {
+      needsFullRedraw_   = false;
+      weatherFirstDraw_  = false;
+      auto* d = gfxDev();
+      d->fillScreen(USAGE_COLOR_BG);
+      // Title bar: city label from settings (defaults to "BKK" if empty).
+      d->fillRect(0, 0, 240, 35, USAGE_COLOR_CARD);
+      d->setTextColor(providerColor);
+      d->setTextSize(3);
+      d->setCursor(10, 8);
+      d->print(s.weather.city.length() ? s.weather.city.c_str() : "BKK");
+      d->setTextSize(2);
+      const char* pill = stale ? "STALE" : "LIVE";
+      d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
+      int16_t tw = gfxTextW(pill, 2);
+      d->setCursor(232 - tw, 10);
+      d->print(pill);
+      // Force all three regions to paint by seeding last values.
+      lastClockMin_ = 0xFF;
+      lastClockDay_ = 0xFF;
+      lastFiveHourOk_[active_] = 0;
+    }
+
+    // Region 1: Clock (repaint only when minute changes).
+    if (synced && (uint8_t)mm != lastClockMin_) {
+      auto* d = gfxDev();
+      // Clear clock area (y=42..105).
+      d->fillRect(0, 42, 240, 64, USAGE_COLOR_BG);
+      // Time HH:MM centered, size 4.
+      d->setTextColor(providerColor);
+      d->setTextSize(4);
+      char tb[8];
+      snprintf(tb, sizeof(tb), "%02d:%02d", hh, mm);
+      int16_t tw = gfxTextW(tb, 4);
+      d->setCursor((240 - tw) / 2, 50);
+      d->print(tb);
+      // Date below, size 2, muted.
+      int mon = lt.tm_mon + 1;    // 1..12
+      int yr  = lt.tm_year + 1900;
+      int dow = lt.tm_wday;       // 0=Sun..6=Sat
+      static const char* DOWS[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
+      static const char* MONS[] = {"Jan","Feb","Mar","Apr","May","Jun",
+                                   "Jul","Aug","Sep","Oct","Nov","Dec"};
+      d->setTextColor(USAGE_COLOR_MUTED);
+      d->setTextSize(2);
+      char db[24];
+      snprintf(db, sizeof(db), "%s %d %s %d",
+               (dow>=0&&dow<=6)?DOWS[dow]:"---", dd,
+               (mon>=1&&mon<=12)?MONS[mon-1]:"---", yr);
+      int16_t dw = gfxTextW(db, 2);
+      d->setCursor((240 - dw) / 2, 90);
+      d->print(db);
+      lastClockMin_ = (uint8_t)mm;
+    } else if (!synced && lastClockMin_ != 0xFE) {
+      // Not synced: show waiting text once.
+      auto* d = gfxDev();
+      d->fillRect(0, 42, 240, 64, USAGE_COLOR_BG);
+      d->setTextColor(USAGE_COLOR_MUTED);
+      d->setTextSize(2);
+      const char* w = "waiting NTP...";
+      int16_t tw = gfxTextW(w, 2);
+      d->setCursor((240 - tw) / 2, 65);
+      d->print(w);
+      lastClockMin_ = 0xFE;
+    }
+
+    // Region 2: Weather + AQI (repaint when new push lands).
+    if (pu.lastOkMs != lastFiveHourOk_[active_]) {
+      auto* d = gfxDev();
+      // Card y=112..160.
+      d->fillRoundRect(8, 112, 224, 48, 5, USAGE_COLOR_CARD);
+      // Left half: temp + condition.
+      d->setTextColor(providerColor);
+      d->setTextSize(3);
+      char tb[8];
+      snprintf(tb, sizeof(tb), "%uc", pu.fiveHour.usedPct);  // temp °C (use 'c' suffix)
+      d->setCursor(18, 118);
+      d->print(tb);
+      d->setTextColor(USAGE_COLOR_MUTED);
+      d->setTextSize(1);
+      d->setCursor(18, 146);
+      if (pu.weatherCode != 0xFF) d->print(wmoLabel(pu.weatherCode));
+      else                         d->print("--");
+      // Divider.
+      d->drawFastVLine(120, 118, 36, USAGE_COLOR_BG);
+      // Right half: AQI index + PM2.5.
+      uint8_t eaqi = pu.weekly.usedPct;
+      d->setTextColor(aqiColor(eaqi));
+      d->setTextSize(3);
+      char ab[8];
+      snprintf(ab, sizeof(ab), "%u", eaqi);
+      int16_t aw = gfxTextW(ab, 3);
+      d->setCursor(232 - aw, 118);
+      d->print(ab);
+      d->setTextSize(1);
+      d->setTextColor(USAGE_COLOR_MUTED);
+      d->setCursor(132, 118);
+      d->print("AQI");
+      if (pu.aqiPm25 != 0xFF) {
+        char pb[16];
+        snprintf(pb, sizeof(pb), "PM2.5 %u", pu.aqiPm25);
+        d->setCursor(132, 146);
+        d->print(pb);
+      }
+      lastFiveHourOk_[active_] = pu.lastOkMs;
+    }
+
+    // Region 3: Mini calendar week strip (repaint when day changes).
+    if (synced && (uint8_t)dd != lastClockDay_) {
+      auto* d = gfxDev();
+      // Card y=166..226.
+      d->fillRoundRect(8, 166, 224, 60, 5, USAGE_COLOR_CARD);
+      int dow = lt.tm_wday;   // 0=Sun..6=Sat
+      // We want Mon-Sun strip with today highlighted.
+      // Offset from Monday: (dow+6)%7
+      int off = (dow + 6) % 7;
+      static const char* DOW3 = "MTWTFSS";
+      d->setTextSize(1);
+      for (int i = 0; i < 7; i++) {
+        int x = 16 + i * 31;
+        // DOW label.
+        d->setTextColor(USAGE_COLOR_MUTED);
+        d->setCursor(x, 172);
+        char dl[2] = {DOW3[i], 0};
+        d->print(dl);
+        // Day number.
+        int slotDay = dd - off + i;
+        bool isToday = (i == off);
+        if (isToday) {
+          d->fillRoundRect(x - 2, 184, 24, 20, 3, providerColor);
+          d->setTextColor(USAGE_COLOR_BG);
+        } else {
+          d->setTextColor(USAGE_COLOR_TEXT);
+        }
+        d->setTextSize(2);
+        char db[4];
+        snprintf(db, sizeof(db), "%d", slotDay);
+        d->setCursor(x, 186);
+        d->print(db);
+      }
+      lastClockDay_ = (uint8_t)dd;
+    }
+
     return;
   }
 
