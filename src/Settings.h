@@ -15,10 +15,10 @@ struct WifiCred {
   String pass;
 };
 
-// ---- Claude usage feature slice -------------------------------------------
+// ---- Usage display slice (3.0.0) ------------------------------------------
 struct UsageSettings {
-  String   usageUrl;      // daemon HTTP endpoint, e.g. http://192.168.1.10:8787/
-  uint16_t pollSec;       // refresh period
+  uint8_t  mode;            // DisplayMode: MODE_CODEX / MODE_ZAI / MODE_AUTO
+  uint16_t autoRotateSec;   // 5..3600 (AUTO provider dwell)
 
   void setDefaults();
   void toJson(JsonObject o) const;
@@ -41,6 +41,8 @@ struct ClockSettings {
 
 // ---- Top-level settings ----------------------------------------------------
 struct Settings {
+  uint16_t schemaVersion;   // 3 after migration; 0 on a fresh chip
+
   // --- WiFi station networks (the device joins one of these) ---
   WifiCred wifi[MAX_WIFI_NETS];
   uint8_t  wifiCount;
@@ -50,12 +52,13 @@ struct Settings {
   String apPass;        // empty => open network
   String hostname;      // mDNS name => http://<hostname>.local
 
-  // --- Active feature ---
-  uint8_t mode;         // MODE_USAGE / MODE_CAROUSEL
+  // --- Active feature (kept for the mode-registry lookup; authoritative
+  //     display mode lives in usage.mode) ---
+  uint8_t mode;         // MODE_CODEX / MODE_ZAI / MODE_AUTO
 
-  // --- Carousel (mode == MODE_CAROUSEL): dwell + which features rotate ---
+  // --- Legacy carousel dwell (kept only as the migration source for
+  //     usage.autoRotateSec on pre-v3 config files) ---
   uint16_t carouselSec;
-  bool carouselUsage;
 
   // --- Shared HTTP / display ---
   uint16_t httpTimeout; // ms

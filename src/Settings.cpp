@@ -8,18 +8,25 @@ static const char* CONFIG_PATH = "/config.json";
 // Usage slice
 // ===========================================================================
 void UsageSettings::setDefaults() {
-  usageUrl = "";
-  pollSec = DEFAULT_POLL_SEC;
+  mode          = DEFAULT_MODE;
+  autoRotateSec = USAGE_AUTOROTATE_SEC;
 }
 
 void UsageSettings::toJson(JsonObject o) const {
-  o["usageUrl"] = usageUrl;
-  o["pollSec"]  = pollSec;
+  o["mode"]          = (mode == MODE_ZAI)   ? "zai"
+                     : (mode == MODE_CODEX) ? "codex" : "auto";
+  o["autoRotateSec"] = autoRotateSec;
 }
 
 void UsageSettings::fromJson(JsonObjectConst o) {
-  if (o["usageUrl"].is<const char*>()) usageUrl = o["usageUrl"].as<String>();
-  if (o["pollSec"].is<int>())          pollSec = max(10, (int)o["pollSec"]);
+  if (o["mode"].is<const char*>()) {
+    String m = o["mode"].as<String>();
+    mode = m.equalsIgnoreCase("zai")   ? MODE_ZAI
+         : m.equalsIgnoreCase("codex") ? MODE_CODEX : MODE_AUTO;
+  }
+  if (o["autoRotateSec"].is<int>())
+    autoRotateSec = (uint16_t)constrain((int)o["autoRotateSec"],
+                                        USAGE_AUTOROTATE_MIN, USAGE_AUTOROTATE_MAX);
 }
 
 // ===========================================================================
@@ -70,6 +77,7 @@ void ClockSettings::fromJson(JsonObjectConst o) {
 // Top-level settings
 // ===========================================================================
 void Settings::setDefaults() {
+  schemaVersion = 3;
   wifiCount = 0;
   for (uint8_t i = 0; i < MAX_WIFI_NETS; i++) {
     wifi[i].ssid = "";
@@ -82,8 +90,10 @@ void Settings::setDefaults() {
   hostname = String(DEFAULT_HOSTNAME) + "-" + String(platformChipId() & 0xFFFF, HEX);
 
   mode = DEFAULT_MODE;
-  carouselSec = DEFAULT_CAROUSEL_SEC;
-  carouselUsage = true;
+  // carouselSec is kept only as the migration source field: legacy pre-v3
+  // config.json files seed usage.autoRotateSec from this value. New installs
+  // use USAGE_AUTOROTATE_SEC directly.
+  carouselSec = USAGE_AUTOROTATE_SEC;
   httpTimeout = DEFAULT_HTTP_TIMEOUT;
 
   brightness = DEFAULT_BRIGHTNESS;
@@ -106,14 +116,39 @@ bool settingsBegin() {
 bool loadSettings(Settings& s) {
   s.setDefaults();
   File f = LittleFS.open(CONFIG_PATH, "r");
-  if (!f) return false;
+  if (!f) {
+    // Fresh chip: persist the v3 defaults so later reads are consistent.
+    saveSettings(s);
+    return false;
+  }
 
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, f);
   f.close();
   if (err) return false;
 
-  settingsApplyJson(s, doc.as<JsonObjectConst>());
+  JsonObjectConst root = doc.as<JsonObjectConst>();
+
+  // Migration: if the file predates schemaVersion 3, lift forward what we keep
+  // (WiFi/AP/hostname/display/clock/httpTimeout), map any old mode to AUTO,
+  // and seed autoRotateSec from the legacy carouselSec if present.
+  uint16_t fileVer = root["schemaVersion"].is<int>() ? (uint16_t)root["schemaVersion"].as<int>() : 0;
+  if (fileVer < 3) {
+    // settingsApplyJson handles both the legacy and v3 layouts and the legacy
+    // top-level mode tokens; after it runs we normalize the v3 fields.
+    settingsApplyJson(s, root);
+    s.usage.mode = MODE_AUTO;
+    if (root["carouselSec"].is<int>()) {
+      int cs = root["carouselSec"].as<int>();
+      s.usage.autoRotateSec = (uint16_t)constrain(cs, USAGE_AUTOROTATE_MIN, USAGE_AUTOROTATE_MAX);
+    }
+    s.schemaVersion = 3;
+    // Persist exactly once. Subsequent saves write the clean v3 schema.
+    saveSettings(s);
+    return true;
+  }
+
+  settingsApplyJson(s, root);
   return true;
 }
 
@@ -136,7 +171,8 @@ void factoryReset(Settings& s) {
 
 // ---------------------------------------------------------------------------
 void settingsToJson(const Settings& s, JsonObject root, bool includeSecrets) {
-  root["hostname"]   = s.hostname;
+  root["schemaVersion"] = s.schemaVersion;
+  root["hostname"]      = s.hostname;
 
   // WiFi networks. Passwords only reach the config file, never the web API.
   JsonArray wf = root["wifi"].to<JsonArray>();
@@ -146,36 +182,33 @@ void settingsToJson(const Settings& s, JsonObject root, bool includeSecrets) {
     e["passSet"] = s.wifi[i].pass.length() > 0;
     if (includeSecrets) e["pass"] = s.wifi[i].pass;
   }
-  // Legacy mirror of the primary network, kept for one release so a firmware
-  // downgrade still finds its WiFi in config.json.
-  root["staSsid"]    = s.wifiCount ? s.wifi[0].ssid : "";
-  root["staPassSet"] = s.wifiCount && s.wifi[0].pass.length() > 0;
+
   root["apSsid"]     = s.apSsid;
   root["apPassSet"]  = s.apPass.length() > 0;
   if (includeSecrets) {
-    root["staPass"]  = s.wifiCount ? s.wifi[0].pass : "";
     root["apPass"]   = s.apPass;
   }
 
-  // Mode + shared HTTP/display
-  root["mode"]              = (s.mode == MODE_USAGE)    ? "usage"
-                            : (s.mode == MODE_CAROUSEL) ? "carousel" : "usage";
-  root["carouselSec"]       = s.carouselSec;
-  root["carouselUsage"]     = s.carouselUsage;
+  // Shared HTTP/display (no legacy staSsid/staPass mirror, no carouselSec,
+  // no carouselTicker/Usage/Radar, no top-level mode token).
   root["httpTimeout"]       = s.httpTimeout;
   root["brightness"]        = s.brightness;
   root["autoBrightness"]    = s.autoBrightness;
   root["backlightInverted"] = s.backlightInverted;
   root["rotation"]          = s.rotation;
 
-  // Feature slices
+  // Feature slices. Authoritative display mode lives in usage.mode.
   s.usage.toJson(root["usage"].to<JsonObject>());
   s.clock.toJson(root["clock"].to<JsonObject>());
 }
 
 // Apply only the keys that are present (partial update friendly). Accepts both
-// the nested layout and the legacy flat layout (feature keys at the top level).
+// the v3 nested layout and the legacy flat layout (so a pre-v3 config.json or
+// a cached old web page still applies). Legacy mode tokens (stocks/usage/radar/
+// carousel) and the legacy top-level `mode` field coerce to MODE_AUTO; the
+// authoritative display mode lives in usage.mode.
 void settingsApplyJson(Settings& s, JsonObjectConst root) {
+  if (root["schemaVersion"].is<int>()) s.schemaVersion = (uint16_t)root["schemaVersion"].as<int>();
   if (root["hostname"].is<const char*>()) s.hostname = root["hostname"].as<String>();
 
   if (root["wifi"].is<JsonArrayConst>()) {
@@ -217,12 +250,17 @@ void settingsApplyJson(Settings& s, JsonObjectConst root) {
   // AP password: apply as-is when present (empty allowed => open AP).
   if (root["apPass"].is<const char*>()) s.apPass = root["apPass"].as<String>();
 
-  if (root["mode"].is<const char*>()) {
-    String m = root["mode"].as<String>();
-    s.mode = m.equalsIgnoreCase("carousel") ? MODE_CAROUSEL : MODE_USAGE;
+  // Legacy top-level "mode" token: stocks/usage/radar/carousel all map to
+  // MODE_AUTO (the authoritative display mode lives in usage.mode now). Any
+  // v3 token (codex/zai/auto) is honoured only via usage{} below.
+  if (root["mode"].is<const char*>()) s.mode = MODE_AUTO;
+
+  // Legacy carouselSec is kept on the in-memory struct so a direct legacy POST
+  // still seeds autoRotateSec. loadSettings handles the file-level migration.
+  if (root["carouselSec"].is<int>()) {
+    int cs = constrain((int)root["carouselSec"], USAGE_AUTOROTATE_MIN, USAGE_AUTOROTATE_MAX);
+    s.carouselSec = (uint16_t)cs;
   }
-  if (root["carouselSec"].is<int>())      s.carouselSec = constrain((int)root["carouselSec"], 5, 3600);
-  if (root["carouselUsage"].is<bool>())   s.carouselUsage = root["carouselUsage"];
 
   if (root["httpTimeout"].is<int>())        s.httpTimeout = constrain((int)root["httpTimeout"], 1000, 20000);
   if (root["brightness"].is<int>())         s.brightness = constrain((int)root["brightness"], 0, 100);
