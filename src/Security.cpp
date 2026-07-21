@@ -89,10 +89,20 @@ bool Security::authorize(ESP8266WebServer& server, bool recovery) const {
       valb -= 8;
     }
   }
-  // decoded == "admin:pairkey". MD5 it and compare to h1_.
+  // decoded == "admin:pairkey". The stored h1_ is MD5("admin:realm:pairkey")
+  // (matches computeH1 in WebPortal.cpp), so rebuild that form before MD5.
+  // decoded format: "<user>:<pairkey>"
+  int colon = decoded.indexOf(':');
+  if (colon < 0) {
+    server.requestAuthentication(BASIC_AUTH, SECURITY_REALM);
+    return false;
+  }
+  String user     = decoded.substring(0, colon);
+  String pairkey  = decoded.substring(colon + 1);
+  String h1_input = user + ":" + SECURITY_REALM + ":" + pairkey;
   MD5Builder md5;
   md5.begin();
-  md5.add(decoded);
+  md5.add(h1_input);
   md5.calculate();
   String got = md5.toString();
   // Constant-time compare.
