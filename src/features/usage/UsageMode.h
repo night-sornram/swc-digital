@@ -29,10 +29,9 @@ class UsageMode : public DisplayMode {
   // Last values rendered (dirty tracking).
   uint32_t lastFiveHourOk_[PROVIDER_COUNT]  = {0};
   uint32_t lastWeeklyOk_[PROVIDER_COUNT]    = {0};
-  uint16_t lastFiveHourReset_[PROVIDER_COUNT] = {0xFFFF, 0xFFFF};
-  uint16_t lastWeeklyReset_[PROVIDER_COUNT]   = {0xFFFF, 0xFFFF};
-  uint16_t lastAgeMin_[PROVIDER_COUNT]        = {0xFFFF, 0xFFFF};
-  bool     lastStale_[PROVIDER_COUNT]         = {false, false};
+  uint16_t lastFiveHourReset_[PROVIDER_COUNT] = {0xFFFF, 0xFFFF, 0xFFFF};
+  uint16_t lastWeeklyReset_[PROVIDER_COUNT]   = {0xFFFF, 0xFFFF, 0xFFFF};
+  bool     lastStale_[PROVIDER_COUNT]         = {false, false, false};
 };
 
 extern UsageMode g_usageMode;

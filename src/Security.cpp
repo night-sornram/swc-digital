@@ -11,12 +11,12 @@ Security g_security;
 const char* SECURITY_REALM = "swc-digital";
 const char* SECURITY_USER  = "admin";
 
-// Auto-unpair threshold: 30 consecutive failed Basic auth attempts (throttled
-// to 1/sec, so ~30 min worst case). Low enough that a firmware auth bug
-// trips it within an hour of Mac service polling; high enough that a brief
-// network glitch or Mac sleep does NOT auto-unpair the device (which would
-// force the user to re-pair and re-cache the browser credentials).
-const uint16_t SECURITY_AUTO_UNPAIR_AFTER = 30;
+// Auto-unpair threshold: 100 consecutive failed Basic auth attempts (throttled
+// to 1 per 5 seconds, so ~8 min worst case of sustained failures). High
+// enough that normal Mac sleep / service restart / Wi-Fi flapping does NOT
+// trip it; low enough that a real firmware auth bug recovers within ~10 min
+// of the service polling loop.
+const uint16_t SECURITY_AUTO_UNPAIR_AFTER = 100;
 
 void Security::begin() {
   // 32-bit chip id -> 8 hex chars. Stable across reboots, IPs, networks.
@@ -136,11 +136,11 @@ void Security::noteAuthOutcome(bool ok) {
     authFailStreak_ = 0;
     return;
   }
-  // Throttle: only count one failure per second so a busy Mac service loop
-  // doesn't trip the counter instantly. millis() granularity is fine.
+  // Throttle: only count one failure per 5 seconds so a busy Mac service
+  // loop polling every 60s doesn't trip the counter in 2 minutes.
   static uint32_t lastFail = 0;
   uint32_t now = millis();
-  if (now - lastFail < 1000) return;
+  if (now - lastFail < 5000) return;
   lastFail = now;
   if (authFailStreak_ < 65535) authFailStreak_++;
   if (authFailStreak_ >= SECURITY_AUTO_UNPAIR_AFTER) {
