@@ -105,13 +105,13 @@ Find the block at `src/config.h:37-43` (it currently looks like `#if defined(SMA
 #include "board_smalltv_ultra.h"
 ```
 
-- [ ] **Step 1.3: Update any direct include of the old name in Gfx.cpp.**
+- [ ] **Step 1.3: Update any direct include of the old name.**
 
 ```sh
 grep -nR "board_esp8266.h" src/ || echo "no other references"
 ```
 
-If `src/Gfx.cpp` (or anything else) includes `board_esp8266.h`, change it to `board_smalltv_ultra.h`. The include is normally pulled in transitively via `config.h`, so this is likely a no-op — verify with the grep.
+`src/usb_clock.cpp:14` has a **direct** `#include "board_esp8266.h"` (not transitive via config.h — clock_usb builds only `usb_clock.cpp` and does not pull `config.h`). Change that single line to `#include "board_smalltv_ultra.h"`. This is an include-path fix only; it does not change any clock_usb logic, protocol, or behaviour. (The original plan assumed only Gfx.cpp might include it directly — that assumption was wrong; Gfx.cpp pulls it via config.h and needs no edit.)
 
 - [ ] **Step 1.4: Verify the project still compiles for `smalltv` (the env still exists; rename happens in Task 5).**
 
@@ -684,7 +684,7 @@ Expected (per AGENTS.md flashing rule #3): the firmware answers `STATUS`. If you
 2. `image-info` on `smalltv_ultra/firmware.bin` reports ESP8266, 4 MB, DIO, valid checksum, and a size well under 682 KB.
 3. `git diff --check` is clean.
 4. No source file references ESP32, C2, NM-TV-154, Ticker, Radar, Mascot, or `WITH_TICKER`/`WITH_RADAR`.
-5. `usb_clock.cpp`, `tools/`, `tests/`, and `loader.cpp` are byte-for-byte unchanged (modulo the env rename in platformio.ini).
+5. `usb_clock.cpp` is unchanged except for the single board-header include path rename (line 14: `board_esp8266.h` → `board_smalltv_ultra.h`, made in Task 1). All USB protocol/logic/gallery/reminder/Face code is byte-for-byte unchanged. `tools/`, `tests/`, and `loader.cpp` are byte-for-byte unchanged (modulo the env rename in platformio.ini).
 6. The working tree is committed (no stray changes) and the branch is ready to receive Plan 2.
 
 **Hand-off to Plan 2:** `docs/superpowers/plans/2026-07-21-v3-plan2-usage-firmware.md`.
