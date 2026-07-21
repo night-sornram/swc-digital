@@ -554,20 +554,20 @@ void UsageMode::service(const Settings& s) {
       // Icon (left, centered vertically in card).
       if (pu.weatherCode != 0xFF)
         drawWeatherIcon(36, 183, pu.weatherCode, providerColor);
-      // Temp big, right of icon.
+      // Temp, right of icon.
       d->setTextColor(providerColor);
-      d->setTextSize(5);
+      d->setTextSize(4);
       char tb[8];
       snprintf(tb, sizeof(tb), "%u", pu.fiveHour.usedPct);
-      d->setCursor(60, 150);
+      d->setCursor(60, 154);
       d->print(tb);
-      d->setTextSize(3);
+      d->setTextSize(2);
       d->print("C");
       // Condition label below temp.
       d->setTextColor(USAGE_COLOR_MUTED);
-      d->setTextSize(3);
+      d->setTextSize(2);
       const char* cond = (pu.weatherCode != 0xFF) ? wmoLabel(pu.weatherCode) : "---";
-      d->setCursor(60, 186);
+      d->setCursor(60, 184);
       d->print(cond);
       lastFiveHourOk_[active_] = pu.lastOkMs;
     }
