@@ -142,10 +142,19 @@ def _make_body(provider_token: str, windows: dict) -> dict:
         "weekly_used_pct":     _w(wk, "used_pct"),
         "weekly_reset_min":    _w(wk, "reset_min"),
     }
-    # SYSTEM provider carries an optional 3rd metric (SSD) that the AI
-    # providers never set. device_client accepts it iff present.
+    # SYSTEM/VITALS: optional 3rd metric (SSD).
     if windows.get("extra_pct") is not None:
         body["extra_pct"] = windows["extra_pct"]
+    # VITALS: temp_c, battery_pct, uptime_min.
+    for k in ("temp_c", "battery_pct", "uptime_min"):
+        v = windows.get(k)
+        if v is not None:
+            body[k] = v
+    # WEATHER: weather_code, temp_min, temp_max, aqi_pm25.
+    for k in ("weather_code", "temp_min", "temp_max", "aqi_pm25"):
+        v = windows.get(k)
+        if v is not None:
+            body[k] = v
     return body
 
 

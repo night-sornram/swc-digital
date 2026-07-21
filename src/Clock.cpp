@@ -39,12 +39,12 @@ void clockBegin(const Settings& s) {
 }
 
 void clockReapply(const Settings& s) {
-  // SNTP only runs when night mode needs it. Starting the lwIP SNTP client is a
-  // permanent mid-arena heap allocation, and on the memory-tight ESP8266 that can
-  // fragment the largest contiguous block below what the cash.ch TLS handshake
-  // needs (blanking those tickers). So arm on the first enable, re-arm on a
-  // timezone change, and never start it while night mode is off.
-  if (!s.clock.nightEnabled) return;
+  // SNTP runs whenever the device needs the time — night mode OR the Weather
+  // screen (which shows a live clock + calendar). Starting the lwIP SNTP
+  // client is a permanent mid-arena heap allocation; on the memory-tight
+  // ESP8266 that can fragment the largest contiguous block below what the
+  // TLS handshake needs. That trade-off is now accepted because the Weather
+  // screen is a primary feature.
   if (!s_ntpStarted || s.clock.tzPosix != s_armedTz) clockBegin(s);
 }
 
@@ -70,8 +70,17 @@ bool clockNow(struct tm& out) {
 
 void clockService(const Settings& s) {
   if (!s.clock.nightEnabled) {
+    // Night mode off: clear night state but keep SNTP running so the Weather
+    // screen's clock stays in sync. (SNTP was started in clockReapply.)
     s_nightLatched = s_nightActive = s_nightHeld = false;
     s_lastResyncMs = 0;
+    // Periodically re-arm SNTP if no sync has landed yet (helps the Weather
+    // screen get a fix without night mode).
+    if (!s_haveSync && (s_lastResyncMs == 0 ||
+        (uint32_t)(millis() - s_lastResyncMs) >= NIGHT_NTP_RESYNC_MS)) {
+      s_lastResyncMs = millis();
+      clockForceResync(s);
+    }
     return;
   }
   struct tm t;
