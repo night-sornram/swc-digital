@@ -36,16 +36,17 @@
 #define MAX_URL_LEN     200    // webhook base URL
 
 // ---------------------------------------------------------------------------
-// Display mode — what the device shows
-//   1 = Claude usage meter (5h/7d usage bars, fed by the usage backend)
-//   3 = carousel: rotate through the ticked features on a timer
-//   (Stocks/Radar modes 0 and 2 were removed in 3.0.0; Plan 2 redefines the
-//   mode enum. DEFAULT_MODE points at MODE_USAGE so config.h alone compiles.)
+// UI modes (3.0.0)
 // ---------------------------------------------------------------------------
-#define MODE_USAGE     1
-#define MODE_CAROUSEL  3
-#define DEFAULT_MODE   MODE_USAGE
-#define DEFAULT_CAROUSEL_SEC 30      // per-mode dwell in carousel
+// Three UI modes for the usage display. AUTO rotates between CODEX and ZAI.
+// Named UiMode to avoid clashing with the DisplayMode renderer base class in
+// Mode.h (that class stays the polymorphic render interface used by main.cpp).
+enum UiMode : uint8_t {
+  MODE_CODEX = 0,
+  MODE_ZAI   = 1,
+  MODE_AUTO  = 2,
+};
+#define DEFAULT_MODE  MODE_AUTO
 
 // ---------------------------------------------------------------------------
 // Compile-time feature toggles. WITH_USAGE gates the usage meter (and the mDNS
@@ -56,10 +57,25 @@
 #define WITH_USAGE 1
 #endif
 
-// Claude usage mode: once data stops arriving for this long (PC asleep, daemon
-// stopped, network down) the screen switches from the stats to the idle mascot
-// animation. Effective timeout also scales with the poll period (see main.cpp).
-#define USAGE_STALE_GRACE_MS  20000UL
+// ---------------------------------------------------------------------------
+// Usage display (3.0.0)
+// ---------------------------------------------------------------------------
+#define USAGE_STALE_AFTER_MS    180000UL   // mark STALE after 180 s without a push
+#define USAGE_AUTOROTATE_SEC    30         // AUTO: dwell on each provider
+#define USAGE_AUTOROTATE_MIN    5
+#define USAGE_AUTOROTATE_MAX    3600
+
+// Palette (RGB565). Match the spec exactly.
+// Each value computed from the #RRGGBB via ((R&0xF8)<<8)|((G&0xFC)<<3)|(B>>3).
+#define USAGE_COLOR_CODEX       0x150F   // #10A37F: (0x10&0xF8)<<8|(0xA3&0xFC)<<3|(0x7F>>3) = 0x1000|0x0500|0x0F
+#define USAGE_COLOR_ZAI         0x6B1F   // #6C63FF: (0x6C&0xF8)<<8|(0x63&0xFC)<<3|(0xFF>>3) = 0x6800|0x0300|0x1F
+#define USAGE_COLOR_BG          0x0883   // #081018: (0x08&0xF8)<<8|(0x10&0xFC)<<3|(0x18>>3) = 0x0800|0x0080|0x03
+#define USAGE_COLOR_CARD        0x10E4   // #111C26: (0x11&0xF8)<<8|(0x1C&0xFC)<<3|(0x26>>3) = 0x1000|0x00E0|0x04
+#define USAGE_COLOR_TEXT        0xF7BF   // #F4F7FA: (0xF4&0xF8)<<8|(0xF7&0xFC)<<3|(0xFA>>3) = 0xF000|0x07A0|0x1F
+#define USAGE_COLOR_MUTED       0x8D16   // #8EA1B2: (0x8E&0xF8)<<8|(0xA1&0xFC)<<3|(0xB2>>3) = 0x8800|0x0500|0x16
+#define USAGE_COLOR_WARN        0xFD84   // #FFB020: (0xFF&0xF8)<<8|(0xB0&0xFC)<<3|(0x20>>3) = 0xF800|0x0580|0x04
+#define USAGE_COLOR_CRIT        0xF28A   // #F05252: (0xF0&0xF8)<<8|(0x52&0xFC)<<3|(0x52>>3) = 0xF000|0x0280|0x0A
+#define USAGE_COLOR_STALE       0x63B0   // #677786: (0x67&0xF8)<<8|(0x77&0xFC)<<3|(0x86>>3) = 0x6000|0x03A0|0x10
 
 // ---------------------------------------------------------------------------
 // Defaults (used on first boot / factory reset)
