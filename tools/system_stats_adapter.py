@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Mac system stats adapter for SWC Digital (3.2+).
 
-Reads CPU + RAM + SSD usage percentages via psutil and returns them in the
+Reads CPU + RAM + Storage usage percentages via psutil and returns them in the
 same shape as the AI-usage adapters so wifi_usage_service.py can push them
 to the device without special-casing:
 
     {
       "five_hour": {"used_pct": <cpu>},   # CPU shown in the 5H card slot
       "weekly":    {"used_pct": <ram>},   # RAM shown in the Weekly card slot
-      "extra_pct": <ssd>,                  # SSD shown in the 3rd SYSTEM card
+      "extra_pct": <storage>,              # Storage shown in the 3rd SYSTEM card
     }
 
 psutil is the only third-party dep. CPU% is averaged over a brief

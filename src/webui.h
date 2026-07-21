@@ -116,7 +116,7 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
    <select id="usage-mode">
     <option value="codex">Codex</option>
     <option value="zai">Z.ai</option>
-    <option value="system">System (CPU/RAM/SSD)</option>
+    <option value="system">System (CPU/RAM/Storage)</option>
     <option value="auto">Auto (rotate)</option>
    </select>
    <label>Auto rotation seconds (5&ndash;3600)</label>

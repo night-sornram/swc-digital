@@ -170,7 +170,7 @@ void UsageMode::service(const Settings& s) {
       drawSystemCard(42,  "CPU", pu.fiveHour.usedPct, pu.fiveHour.available, providerColor, stale);
       drawSystemCard(96,  "RAM", pu.weekly.usedPct,   pu.weekly.available,   providerColor, stale);
       bool ssd_avail = (pu.extraPct != 0xFF);
-      drawSystemCard(150, "SSD", pu.extraPct,         ssd_avail,             providerColor, stale);
+      drawSystemCard(150, "DISK", pu.extraPct,        ssd_avail,             providerColor, stale);
       lastAgeMin_[active_]        = 0xFFFF;
       lastStale_[active_]         = stale;
       lastFiveHourOk_[active_]    = pu.lastOkMs;
@@ -182,7 +182,7 @@ void UsageMode::service(const Settings& s) {
       drawSystemCard(42,  "CPU", pu.fiveHour.usedPct, pu.fiveHour.available, providerColor, stale);
       drawSystemCard(96,  "RAM", pu.weekly.usedPct,   pu.weekly.available,   providerColor, stale);
       bool ssd_avail = (pu.extraPct != 0xFF);
-      drawSystemCard(150, "SSD", pu.extraPct,         ssd_avail,             providerColor, stale);
+      drawSystemCard(150, "DISK", pu.extraPct,        ssd_avail,             providerColor, stale);
       lastFiveHourOk_[active_] = pu.lastOkMs;
       lastWeeklyOk_[active_]   = pu.lastOkMs;
       lastStale_[active_]      = stale;
