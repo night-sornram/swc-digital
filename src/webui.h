@@ -97,18 +97,6 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
 
  <!-- DISPLAY (shared) -->
  <section id="display" class="tab">
-  <div class="card"><h2>Mode</h2>
-   <label>What this device shows</label>
-   <select id="mode" onchange="modeChanged()">
-    <option value="usage">Claude usage</option>
-    <option value="carousel">Carousel (rotate modes)</option>
-   </select>
-   <div id="carouselRow">
-    <label>Switch mode every (s)</label><input id="carouselSec" type="number" min="5" max="3600">
-    <div class="chk"><input id="carouselUsage" type="checkbox"><label>Claude usage</label></div>
-   </div>
-   <small class="hint">Pick the active feature, then configure it in its own tab. Carousel rotates through the ticked features.</small>
-  </div>
   <div class="card"><h2>Screen</h2>
    <label>Brightness: <span id="brVal"></span>%</label>
    <input id="brightness" type="range" min="0" max="100" oninput="brVal.textContent=this.value">
@@ -253,16 +241,10 @@ var TZMAP={
 function fillTz(){var s=$('tz');if(!s)return;var keys=Object.keys(TZMAP).filter(function(k){return k!==''});
  keys.sort();s.innerHTML='<option value="">UTC</option>'+keys.map(function(k){return '<option value="'+k+'">'+k+'</option>'}).join('');}
 
-var MODEOPT={usage:'usage'};
-var CAROPT={usage:'carouselUsage'};
 function hideFeat(name){
  var b=document.querySelector('nav button[data-t="'+name+'"]'); if(b)b.remove();
  var sec=$(name); if(sec)sec.remove();
- var o=document.querySelector('#mode option[value="'+MODEOPT[name]+'"]'); if(o)o.remove();
- var c=$(CAROPT[name]); if(c)c.closest('.chk').remove();
 }
-function modeChanged(){if(!$('mode'))return;
- $('carouselRow').style.display=$('mode').value==='carousel'?'block':'none';}
 function loadConfig(){return j('/api/config').then(function(c){C=c;
  var f=c.features||{}; ['usage'].forEach(function(k){if(f[k]===false)hideFeat(k)});
  // shared
@@ -281,9 +263,6 @@ function loadConfig(){return j('/api/config').then(function(c){C=c;
  sv('tz',ck.tz||''); sc('nightEnabled',!!ck.nightEnabled);
  sv('nightStart',ck.nightStart||'22:00'); sv('nightEnd',ck.nightEnd||'07:00');
  sv('nightLevel',ck.nightLevel!=null?ck.nightLevel:0); $('nlVal')&&($('nlVal').textContent=(ck.nightLevel!=null?ck.nightLevel:0));
- $('mode').value=c.mode||'usage'; modeChanged();
- sv('carouselSec',c.carouselSec||30);
- sc('carouselUsage',c.carouselUsage!==false);
  var ap=$('apPass'); if(ap)ap.placeholder=c.apPassSet?'(unchanged)':'(open)';
  // usage slice (3.0.0): the Usage tab's mode/rotate selectors.
  if(c.usage){
@@ -295,9 +274,7 @@ function loadConfig(){return j('/api/config').then(function(c){C=c;
 function esc(s){return (''+(s==null?'':s)).replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]})}
 
 function collect(){
- var o={mode:gv('mode'),
-  carouselSec:parseInt(gv('carouselSec'))||30,
-  carouselUsage:gc('carouselUsage'),
+ var o={
   brightness:parseInt(gv('brightness'))||0,
   rotation:parseInt(gv('rotation')),
   autoBrightness:gc('autoBrightness'),
@@ -375,14 +352,22 @@ function loadUsageOverview(){
  j('/api/status').then(function(s){
   var u=s.usage||{}; var ps=u.providers||[];
   function byName(n){for(var i=0;i<ps.length;i++){if(ps[i].provider===n)return ps[i]}return null}
+  function fmtM(min){
+   // Compact d/h/m: 5711 -> "3d 23h 11m", 95 -> "1h 35m", 5 -> "5m".
+   if(min==null||min<0)return null;
+   var d=Math.floor(min/1440), h=Math.floor((min%1440)/60), m=min%60;
+   if(d>0)return d+'d '+h+'h '+m+'m';
+   if(h>0)return h+'h '+m+'m';
+   return m+'m';
+  }
   function fill(pre,p){
    if(!p)return;
    var f=p.five_hour||{}, w=p.weekly||{};
-   var ageS=(p.age_sec==null||p.age_sec<0)?'--':Math.floor(p.age_sec/60)+'m';
+   var ageS=fmtM(p.age_sec!=null&&p.age_sec>=0?Math.floor(p.age_sec/60):null)||'--';
    $(pre+'-5h').textContent=f.used_pct!=null?f.used_pct+'%':'N/A';
-   $(pre+'-5h-reset').textContent=f.reset_min!=null&&f.reset_min>=0?('RESET '+f.reset_min+'m'):'RESET --';
+   $(pre+'-5h-reset').textContent='RESET '+(fmtM(f.reset_min)||'--');
    $(pre+'-wk').textContent=w.used_pct!=null?w.used_pct+'%':'N/A';
-   $(pre+'-wk-reset').textContent=w.reset_min!=null&&w.reset_min>=0?('RESET '+w.reset_min+'m'):'RESET --';
+   $(pre+'-wk-reset').textContent='RESET '+(fmtM(w.reset_min)||'--');
    $(pre+'-age').textContent=ageS;
    $(pre+'-state').textContent=p.stale?'STALE':'LIVE';
   }

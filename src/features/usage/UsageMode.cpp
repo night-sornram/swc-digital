@@ -58,7 +58,13 @@ static void drawCard(int16_t y, const char* label, const UsageWindow& w,
   d->setCursor(18, by + 14);
   if (w.available && w.resetMin != 0xFFFF) {
     char buf[24];
-    snprintf(buf, sizeof(buf), "RESET %um", w.resetMin);
+    // Compact d/h/m: 5711m -> "3d 23h 11m", 95m -> "1h 35m", 5m -> "5m".
+    uint16_t m = w.resetMin;
+    uint16_t days  = m / 1440; m -= days * 1440;
+    uint16_t hours = m / 60;   m -= hours * 60;
+    if (days)        snprintf(buf, sizeof(buf), "RESET %ud %uh %um", days, hours, m);
+    else if (hours)  snprintf(buf, sizeof(buf), "RESET %uh %um",     hours, m);
+    else             snprintf(buf, sizeof(buf), "RESET %um",         m);
     d->print(buf);
   } else {
     d->print("RESET --");

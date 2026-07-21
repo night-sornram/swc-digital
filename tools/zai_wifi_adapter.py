@@ -82,12 +82,20 @@ def _to_window(entry: dict) -> Optional[dict]:
     reset = entry.get("nextResetTime")
     if isinstance(reset, str) and reset:
         try:
-            # ISO-8601 (z.ai uses e.g. "2026-07-22T03:00:00Z"). Be tolerant of offsets.
+            # ISO-8601 string (some clients). Be tolerant of offsets.
             dt = datetime.fromisoformat(reset.replace("Z", "+00:00"))
             now = datetime.now(timezone.utc)
             mins = int((dt - now).total_seconds() // 60)
             out["reset_min"] = max(0, min(65535, mins))
         except (ValueError, TypeError):
+            pass
+    elif isinstance(reset, int) and not isinstance(reset, bool) and reset > 0:
+        try:
+            # Epoch milliseconds (z.ai's actual production response).
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            mins = (reset - now_ms) // 60000
+            out["reset_min"] = max(0, min(65535, mins))
+        except (ValueError, TypeError, OverflowError):
             pass
     return out
 
