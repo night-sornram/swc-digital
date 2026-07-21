@@ -19,18 +19,65 @@ static uint16_t barColorFor(uint8_t pct, uint16_t providerColor, bool stale) {
   return providerColor;
 }
 
-// WMO weather code → 3-char label (built-in font lacks weather glyphs).
+// WMO weather code → label + icon drawing.
 // See open-meteo docs: 0=clear, 1-3=cloudy, 45-48=fog, 51-67=rain,
 // 71-77=snow, 80-82=showers, 95-99=thunderstorm.
+
+// Draw a simple weather icon at (cx, cy) center. Size ~20px.
+// Uses GFX primitives since the built-in font has no icon glyphs.
+static void drawWeatherIcon(int16_t cx, int16_t cy, uint8_t code,
+                            uint16_t providerColor) {
+  auto* d = gfxDev();
+  if (code == 0) {
+    // Sun: filled circle + outer ring.
+    d->fillCircle(cx, cy, 8, 0xFD84);    // yellow #FFB020
+    d->drawCircle(cx, cy, 12, 0xFD84);
+    // Rays (4 short lines).
+    d->drawFastVLine(cx, cy - 14, 4, 0xFD84);
+    d->drawFastVLine(cx, cy + 11, 4, 0xFD84);
+    d->drawFastHLine(cx - 14, cy, 4, 0xFD84);
+    d->drawFastHLine(cx + 11, cy, 4, 0xFD84);
+  } else if (code >= 1 && code <= 3) {
+    // Cloud: two overlapping rounded rects.
+    d->fillRoundRect(cx - 12, cy - 2, 26, 14, 6, 0x8D16);  // muted gray
+    d->fillRoundRect(cx - 4, cy - 10, 18, 14, 6, 0x8D16);
+  } else if (code >= 45 && code <= 48) {
+    // Fog: horizontal lines.
+    for (int i = -6; i <= 6; i += 4)
+      d->drawFastHLine(cx - 12, cy + i, 24, 0x8D16);
+  } else if (code >= 51 && code <= 67 || code >= 80 && code <= 82) {
+    // Rain: cloud + drops.
+    d->fillRoundRect(cx - 10, cy - 8, 22, 12, 5, 0x8D16);
+    d->fillRoundRect(cx - 2, cy - 14, 14, 12, 5, 0x8D16);
+    // 3 rain drops.
+    d->drawFastVLine(cx - 6, cy + 6, 6, 0x03FF);  // blue
+    d->drawFastVLine(cx,     cy + 8, 6, 0x03FF);
+    d->drawFastVLine(cx + 6, cy + 6, 6, 0x03FF);
+  } else if (code >= 71 && code <= 77) {
+    // Snow: cloud + dots.
+    d->fillRoundRect(cx - 10, cy - 8, 22, 12, 5, 0x8D16);
+    d->fillRoundRect(cx - 2, cy - 14, 14, 12, 5, 0x8D16);
+    d->drawPixel(cx - 5, cy + 6, 0xFFFF);
+    d->drawPixel(cx,     cy + 8, 0xFFFF);
+    d->drawPixel(cx + 5, cy + 6, 0xFFFF);
+  } else {
+    // Storm / default: cloud + lightning (zigzag).
+    d->fillRoundRect(cx - 10, cy - 8, 22, 12, 5, 0x8D16);
+    d->fillRoundRect(cx - 2, cy - 14, 14, 12, 5, 0x8D16);
+    d->drawLine(cx - 2, cy + 4, cx + 2, cy + 8, 0xFD84);   // yellow
+    d->drawLine(cx + 2, cy + 8, cx - 1, cy + 10, 0xFD84);
+  }
+}
+
 static const char* wmoLabel(uint8_t code) {
-  if (code == 0)                       return "CLR";
-  if (code >= 1 && code <= 3)          return "CLD";
-  if (code >= 45 && code <= 48)        return "FOG";
-  if (code >= 51 && code <= 67)        return "RAIN";
-  if (code >= 71 && code <= 77)        return "SNOW";
-  if (code >= 80 && code <= 82)        return "SHR";
-  if (code >= 95)                      return "STM";
-  return "--";
+  if (code == 0)                       return "Clear";
+  if (code >= 1 && code <= 3)          return "Cloudy";
+  if (code >= 45 && code <= 48)        return "Fog";
+  if (code >= 51 && code <= 67)        return "Rain";
+  if (code >= 71 && code <= 77)        return "Snow";
+  if (code >= 80 && code <= 82)        return "Showers";
+  if (code >= 95)                      return "Storm";
+  return "---";
 }
 
 // AQI color by european_aqi band.
@@ -321,28 +368,24 @@ void UsageMode::service(const Settings& s) {
       int16_t tw = gfxTextW(pill, 2);
       d->setCursor(232 - tw, 10);
       d->print(pill);
-      // Row 1: CPU (left) / RAM (right). Cards 70px tall.
+      // CPU hero card (full width).
       drawVitalsCard(8,   42,  "CPU",  pu.fiveHour.usedPct, pu.fiveHour.available, false, providerColor, stale);
-      drawVitalsCard(124, 42,  "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
-      // Row 2: SSD (left) / TEMP (right).
+      // RAM + DISK side by side.
+      drawVitalsCard(8,   118, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
       bool ssdAvail = (pu.extraPct != 0xFF);
-      drawVitalsCard(8,   118, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
-      bool tempAvail = (pu.tempC != (int8_t)0x80);
-      drawVitalsCard(124, 118, "TEMP", (uint8_t)pu.tempC,   tempAvail,             true,  providerColor, stale);
+      drawVitalsCard(124, 118, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
       // Banner: battery + uptime.
       drawVitalsBanner(194, pu.batteryPct, pu.uptimeMin, stale);
       lastFiveHourOk_[active_] = pu.lastOkMs;
       lastStale_[active_]      = stale;
       return;
     }
-    // Partial: data changed → repaint the 4 cards + banner.
+    // Partial: data changed → repaint cards + banner.
     if (pu.lastOkMs != lastFiveHourOk_[active_] || stale != lastStale_[active_]) {
       drawVitalsCard(8,   42,  "CPU",  pu.fiveHour.usedPct, pu.fiveHour.available, false, providerColor, stale);
-      drawVitalsCard(124, 42,  "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
+      drawVitalsCard(8,   118, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
       bool ssdAvail = (pu.extraPct != 0xFF);
-      drawVitalsCard(8,   118, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
-      bool tempAvail = (pu.tempC != (int8_t)0x80);
-      drawVitalsCard(124, 118, "TEMP", (uint8_t)pu.tempC,   tempAvail,             true,  providerColor, stale);
+      drawVitalsCard(124, 118, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
       drawVitalsBanner(194, pu.batteryPct, pu.uptimeMin, stale);
       lastFiveHourOk_[active_] = pu.lastOkMs;
       lastStale_[active_]      = stale;
@@ -350,9 +393,9 @@ void UsageMode::service(const Settings& s) {
     return;
   }
 
-  // ---- WEATHER: Clock + Date + Temp + Condition ----
-  // Two dirty regions: clock (per-minute), weather (per-push).
-  // No AQI, no calendar — clean time+weather screen.
+  // ---- WEATHER: Option A — Time Hero + Icon Card ----
+  // Three dirty regions: title pill (stale change), clock (per-minute),
+  // weather card (per-push). Never fullScreen per tick.
   if (active_ == PROVIDER_WEATHER) {
     struct tm lt;
     bool synced = clockNow(lt);
@@ -370,49 +413,65 @@ void UsageMode::service(const Settings& s) {
       d->setTextSize(3);
       d->setCursor(10, 8);
       d->print(s.weather.city.length() ? s.weather.city.c_str() : "BKK");
+      lastClockMin_ = 0xFF;
+      lastFiveHourOk_[active_] = 0;
+      lastStale_[active_] = !stale;  // force pill update
+    }
+
+    // Title pill: update when stale status changes.
+    if (stale != lastStale_[active_]) {
+      auto* d = gfxDev();
+      d->fillRect(160, 6, 78, 24, USAGE_COLOR_CARD);
       d->setTextSize(2);
       const char* pill = stale ? "STALE" : "LIVE";
       d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
       int16_t tw = gfxTextW(pill, 2);
       d->setCursor(232 - tw, 10);
       d->print(pill);
-      lastClockMin_ = 0xFF;
-      lastFiveHourOk_[active_] = 0;
+      lastStale_[active_] = stale;
     }
 
-    // Region 1: Clock + date (repaint only when minute changes).
+    // Region 1: Time + date (repaint only when minute changes).
     if (synced && (uint8_t)mm != lastClockMin_) {
       auto* d = gfxDev();
-      d->fillRect(0, 42, 240, 80, USAGE_COLOR_BG);
-      // Time HH:MM centered, big.
+      // Clear time+date area (y=42..125).
+      d->fillRect(0, 42, 240, 84, USAGE_COLOR_BG);
+      // Time HH:MM — 48px, centered, teal.
       d->setTextColor(providerColor);
       d->setTextSize(5);
       char tb[8];
       snprintf(tb, sizeof(tb), "%02d:%02d", hh, mm);
       int16_t tw = gfxTextW(tb, 5);
-      d->setCursor((240 - tw) / 2, 48);
+      d->setCursor((240 - tw) / 2, 44);
       d->print(tb);
-      // Date below.
+      // Date: day of week (bigger) + full date below.
       int mon = lt.tm_mon + 1;
       int yr  = lt.tm_year + 1900;
       int dd  = lt.tm_mday;
       int dow = lt.tm_wday;
-      static const char* DOWS[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
+      static const char* DOWS[] = {"Sunday","Monday","Tuesday","Wednesday",
+                                   "Thursday","Friday","Saturday"};
       static const char* MONS[] = {"Jan","Feb","Mar","Apr","May","Jun",
                                    "Jul","Aug","Sep","Oct","Nov","Dec"};
-      d->setTextColor(USAGE_COLOR_MUTED);
+      d->setTextColor(USAGE_COLOR_TEXT);
       d->setTextSize(2);
+      if (dow >= 0 && dow <= 6) {
+        int16_t dw = gfxTextW(DOWS[dow], 2);
+        d->setCursor((240 - dw) / 2, 96);
+        d->print(DOWS[dow]);
+      }
+      d->setTextColor(USAGE_COLOR_MUTED);
+      d->setTextSize(1);
       char db[24];
-      snprintf(db, sizeof(db), "%s  %d %s %d",
-               (dow>=0&&dow<=6)?DOWS[dow]:"---", dd,
+      snprintf(db, sizeof(db), "%d %s %d", dd,
                (mon>=1&&mon<=12)?MONS[mon-1]:"---", yr);
-      int16_t dw = gfxTextW(db, 2);
-      d->setCursor((240 - dw) / 2, 100);
+      int16_t dw2 = gfxTextW(db, 1);
+      d->setCursor((240 - dw2) / 2, 114);
       d->print(db);
       lastClockMin_ = (uint8_t)mm;
     } else if (!synced && lastClockMin_ != 0xFE) {
       auto* d = gfxDev();
-      d->fillRect(0, 42, 240, 80, USAGE_COLOR_BG);
+      d->fillRect(0, 42, 240, 84, USAGE_COLOR_BG);
       d->setTextColor(USAGE_COLOR_MUTED);
       d->setTextSize(2);
       const char* w = "waiting NTP...";
@@ -422,25 +481,37 @@ void UsageMode::service(const Settings& s) {
       lastClockMin_ = 0xFE;
     }
 
-    // Region 2: Temp + condition (repaint when new push lands).
+    // Region 2: Weather card with icon (repaint when new push lands).
     if (pu.lastOkMs != lastFiveHourOk_[active_]) {
       auto* d = gfxDev();
-      d->fillRect(0, 128, 240, 60, USAGE_COLOR_BG);
-      // Big temp centered.
+      // Card y=132..196.
+      d->fillRoundRect(8, 132, 224, 64, 6, USAGE_COLOR_CARD);
+      // Icon (left side).
+      if (pu.weatherCode != 0xFF)
+        drawWeatherIcon(36, 164, pu.weatherCode, providerColor);
+      // Temp + condition (right of icon).
       d->setTextColor(providerColor);
-      d->setTextSize(5);
-      char tb[8];
-      snprintf(tb, sizeof(tb), "%uc", pu.fiveHour.usedPct);
-      int16_t tw = gfxTextW(tb, 5);
-      d->setCursor((240 - tw) / 2, 130);
-      d->print(tb);
-      // Condition label below, centered.
-      d->setTextColor(USAGE_COLOR_MUTED);
       d->setTextSize(3);
-      const char* cond = (pu.weatherCode != 0xFF) ? wmoLabel(pu.weatherCode) : "--";
-      int16_t cw = gfxTextW(cond, 3);
-      d->setCursor((240 - cw) / 2, 168);
+      char tb[8];
+      snprintf(tb, sizeof(tb), "%u", pu.fiveHour.usedPct);
+      d->setCursor(60, 140);
+      d->print(tb);
+      d->setTextSize(2);
+      d->print("C");
+      // Condition label.
+      d->setTextColor(USAGE_COLOR_MUTED);
+      d->setTextSize(2);
+      const char* cond = (pu.weatherCode != 0xFF) ? wmoLabel(pu.weatherCode) : "---";
+      d->setCursor(60, 166);
       d->print(cond);
+      // Hi/Lo.
+      if (pu.tempC != (int8_t)0x80 && pu.extraPct != 0xFF) {
+        char hl[24];
+        snprintf(hl, sizeof(hl), "H%u  L%d", pu.extraPct, (int)pu.tempC);
+        d->setTextSize(1);
+        d->setCursor(60, 184);
+        d->print(hl);
+      }
       lastFiveHourOk_[active_] = pu.lastOkMs;
     }
 
