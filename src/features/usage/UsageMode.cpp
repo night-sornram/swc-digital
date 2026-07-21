@@ -549,34 +549,26 @@ void UsageMode::service(const Settings& s) {
     // Region 2: Weather card with icon (repaint when new push lands).
     if (pu.lastOkMs != lastFiveHourOk_[active_]) {
       auto* d = gfxDev();
-      // Card moved down to fit bigger date text.
+      // Card: temp + condition + icon, no Hi/Lo.
       d->fillRoundRect(8, 148, 224, 70, 6, USAGE_COLOR_CARD);
-      // Icon (left side).
+      // Icon (left, centered vertically in card).
       if (pu.weatherCode != 0xFF)
         drawWeatherIcon(36, 183, pu.weatherCode, providerColor);
-      // Temp + condition (right of icon).
+      // Temp big, right of icon.
       d->setTextColor(providerColor);
-      d->setTextSize(4);
+      d->setTextSize(5);
       char tb[8];
       snprintf(tb, sizeof(tb), "%u", pu.fiveHour.usedPct);
-      d->setCursor(60, 152);
+      d->setCursor(60, 150);
       d->print(tb);
-      d->setTextSize(2);
+      d->setTextSize(3);
       d->print("C");
-      // Condition label.
+      // Condition label below temp.
       d->setTextColor(USAGE_COLOR_MUTED);
-      d->setTextSize(2);
+      d->setTextSize(3);
       const char* cond = (pu.weatherCode != 0xFF) ? wmoLabel(pu.weatherCode) : "---";
-      d->setCursor(60, 180);
+      d->setCursor(60, 186);
       d->print(cond);
-      // Hi/Lo (bigger font).
-      if (pu.tempC != (int8_t)0x80 && pu.extraPct != 0xFF) {
-        char hl[24];
-        snprintf(hl, sizeof(hl), "H%u  L%d", pu.extraPct, (int)pu.tempC);
-        d->setTextSize(2);
-        d->setCursor(60, 200);
-        d->print(hl);
-      }
       lastFiveHourOk_[active_] = pu.lastOkMs;
     }
 
