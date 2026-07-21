@@ -87,6 +87,11 @@ void UsageMode::setActiveProvider(UsageProvider p) {
   needsFullRedraw_ = true;
 }
 
+void UsageMode::toggleAutoProvider() {
+  active_ = (active_ == PROVIDER_CODEX) ? PROVIDER_ZAI : PROVIDER_CODEX;
+  needsFullRedraw_ = true;
+}
+
 void UsageMode::service(const Settings& s) {
   const ProviderUsage& pu = g_usageStore.read(active_);
   bool stale = g_usageStore.stale(active_);

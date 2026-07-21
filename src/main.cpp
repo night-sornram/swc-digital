@@ -19,6 +19,7 @@
 
 #if WITH_USAGE
 #include "UsageMode.h"
+#include "UsageStore.h"
 #endif
 
 // ---- mode registry --------------------------------------------------------
@@ -31,45 +32,23 @@ static DisplayMode* kModes[] = {
 };
 static const size_t kModeCount = sizeof(kModes) / sizeof(kModes[0]);
 
-// ---- carousel -------------------------------------------------------------
-// MODE_CAROUSEL rotates through the ticked features. Switches call wake() on
-// the incoming mode: repaint from cached data, no refetch.
-static size_t   g_carIdx = 0;
-static uint32_t g_carSwitch = 0;
+// ---- AUTO rotation --------------------------------------------------------
+// AUTO toggles the usage renderer's active provider every autoRotateSec.
+// Manual CODEX/ZAI sticks on the selected provider. Entering AUTO resets timer.
+static uint32_t g_autoSwitch = 0;   // millis() of the last provider toggle
 
-static bool carouselHas(const Settings& s, const DisplayMode* m) {
-  switch (m->modeConst()) {
-    case MODE_USAGE:  return s.carouselUsage;
-    default:          return true;
-  }
-}
-
-// Advance g_carIdx to the next ticked mode (stays put if none other is ticked).
-static void carouselNext(const Settings& s) {
-  for (size_t hop = 1; hop <= kModeCount; hop++) {
-    size_t cand = (g_carIdx + hop) % kModeCount;
-    if (!carouselHas(s, kModes[cand])) continue;
-    if (cand != g_carIdx) {
-      g_carIdx = cand;
-      kModes[cand]->wake(s);
+static void applyMode(const Settings& s) {
+  switch (s.usage.mode) {
+    case MODE_CODEX: g_usageMode.setActiveProvider(PROVIDER_CODEX); break;
+    case MODE_ZAI:   g_usageMode.setActiveProvider(PROVIDER_ZAI);   break;
+    case MODE_AUTO:
+    default: {
+      // Start (or restart) on CODEX; reset timer whenever we (re)enter AUTO.
+      g_usageMode.setActiveProvider(PROVIDER_CODEX);
+      g_autoSwitch = millis();
+      break;
     }
-    return;
   }
-}
-
-static DisplayMode* activeMode(const Settings& s) {
-  if (s.mode == MODE_CAROUSEL && kModeCount > 0) {
-    if (g_carSwitch == 0) g_carSwitch = millis();
-    if (!carouselHas(s, kModes[g_carIdx])) carouselNext(s);   // settings changed
-    if (millis() - g_carSwitch >= (uint32_t)s.carouselSec * 1000UL) {
-      g_carSwitch = millis();
-      carouselNext(s);
-    }
-    return kModes[g_carIdx];
-  }
-  for (size_t i = 0; i < kModeCount; i++)
-    if (kModes[i]->modeConst() == s.mode) return kModes[i];
-  return kModeCount ? kModes[0] : nullptr;   // fall back to the first compiled mode
 }
 
 static Settings g_settings;
@@ -179,6 +158,7 @@ void setup() {
 
   Serial.println("[boot] modes");
   for (size_t i = 0; i < kModeCount; i++) kModes[i]->begin(g_settings);
+  applyMode(g_settings);
   Serial.println("[boot] done");
 
   if (netMode() == NET_AP) {
@@ -220,7 +200,21 @@ void loop() {
   clockService(g_settings);
   appApplyBrightness();
 
-  DisplayMode* m = activeMode(g_settings);
+  // AUTO rotation: every autoRotateSec, flip provider. Manual modes stay put.
+  if (g_settings.usage.mode == MODE_AUTO) {
+    if (g_autoSwitch == 0) g_autoSwitch = millis();
+    if (millis() - g_autoSwitch >= (uint32_t)g_settings.usage.autoRotateSec * 1000UL) {
+      g_autoSwitch = millis();
+      // Toggle CODEX <-> ZAI (UsageMode tracks which is current).
+      g_usageMode.toggleAutoProvider();
+    }
+  }
+
+  // Single-mode registry: find &g_usageMode and dispatch service().
+  DisplayMode* m = nullptr;
+  for (size_t i = 0; i < kModeCount; i++) {
+    if (kModes[i] == &g_usageMode) { m = kModes[i]; break; }
+  }
   if (m) m->service(g_settings);
 
   delay(5);

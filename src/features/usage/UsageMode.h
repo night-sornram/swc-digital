@@ -21,6 +21,7 @@ class UsageMode : public DisplayMode {
 
   // Called by main.cpp when AUTO rotates: repaint the new provider.
   void setActiveProvider(UsageProvider p);
+  void toggleAutoProvider();   // flips CODEX <-> ZAI (AUTO mode only)
  private:
   bool needsFullRedraw_ = true;
   UsageProvider active_ = PROVIDER_CODEX;
