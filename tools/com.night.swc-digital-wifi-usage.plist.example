@@ -14,6 +14,7 @@
     <string>--with</string>
     <string>tomli</string>
     <string>REPLACE_WITH_ABSOLUTE_PATH_TO_REPOSITORY/tools/wifi_usage_service.py</string>
+    <string>run</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
