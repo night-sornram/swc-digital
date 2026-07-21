@@ -42,6 +42,21 @@ struct ClockSettings {
   void fromJson(JsonObjectConst o);
 };
 
+// ---- Weather slice (3.3.0) -------------------------------------------------
+// City label + coordinates. The coordinates are informational on the device
+// (title bar shows city); the Mac adapter owns the actual fetch coordinates
+// in wifi-usage.toml. Kept in sync manually (see rollout notes in AGENTS.md).
+struct WeatherSettings {
+  String city;       // short title-bar label, e.g. "BKK"
+  String cityName;   // long label, e.g. "Bangkok" (reserved for future use)
+  float  lat;        // latitude (informational)
+  float  lon;        // longitude (informational)
+
+  void setDefaults();
+  void toJson(JsonObject o) const;
+  void fromJson(JsonObjectConst o);
+};
+
 // ---- Top-level settings ----------------------------------------------------
 struct Settings {
   uint16_t schemaVersion;   // 4 after migration; 0 on a fresh chip
@@ -74,6 +89,7 @@ struct Settings {
   // --- Feature slices ---
   UsageSettings  usage;
   ClockSettings  clock;
+  WeatherSettings weather;
 
   void setDefaults();
 };

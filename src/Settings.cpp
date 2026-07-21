@@ -30,9 +30,11 @@ void UsageSettings::setDefaults() {
 }
 
 void UsageSettings::toJson(JsonObject o) const {
-  o["mode"]          = (mode == MODE_ZAI)    ? "zai"
-                     : (mode == MODE_CODEX)  ? "codex"
-                     : (mode == MODE_SYSTEM) ? "system" : "auto";
+  o["mode"]          = (mode == MODE_ZAI)     ? "zai"
+                     : (mode == MODE_CODEX)   ? "codex"
+                     : (mode == MODE_SYSTEM)  ? "system"
+                     : (mode == MODE_VITALS)  ? "vitals"
+                     : (mode == MODE_WEATHER) ? "weather" : "auto";
   o["autoRotateSec"] = autoRotateSec;
   o["codexSec"]      = codexSec;
   o["zaiSec"]        = zaiSec;
@@ -42,9 +44,11 @@ void UsageSettings::toJson(JsonObject o) const {
 void UsageSettings::fromJson(JsonObjectConst o) {
   if (o["mode"].is<const char*>()) {
     String m = o["mode"].as<String>();
-    mode = m.equalsIgnoreCase("zai")    ? MODE_ZAI
-         : m.equalsIgnoreCase("codex")  ? MODE_CODEX
-         : m.equalsIgnoreCase("system") ? MODE_SYSTEM : MODE_AUTO;
+    mode = m.equalsIgnoreCase("zai")     ? MODE_ZAI
+         : m.equalsIgnoreCase("codex")   ? MODE_CODEX
+         : m.equalsIgnoreCase("system")  ? MODE_SYSTEM
+         : m.equalsIgnoreCase("vitals")  ? MODE_VITALS
+         : m.equalsIgnoreCase("weather") ? MODE_WEATHER : MODE_AUTO;
   }
   if (o["autoRotateSec"].is<int>())
     autoRotateSec = (uint16_t)constrain((int)o["autoRotateSec"],
@@ -101,10 +105,34 @@ void ClockSettings::fromJson(JsonObjectConst o) {
 }
 
 // ===========================================================================
+// Weather slice
+// ===========================================================================
+void WeatherSettings::setDefaults() {
+  city     = "BKK";
+  cityName = "Bangkok";
+  lat      = 13.7563f;
+  lon      = 100.5018f;
+}
+
+void WeatherSettings::toJson(JsonObject o) const {
+  o["city"]     = city;
+  o["cityName"] = cityName;
+  o["lat"]      = lat;
+  o["lon"]      = lon;
+}
+
+void WeatherSettings::fromJson(JsonObjectConst o) {
+  if (o["city"].is<const char*>())       city     = o["city"].as<String>();
+  if (o["cityName"].is<const char*>())   cityName = o["cityName"].as<String>();
+  if (o["lat"].is<float>())              lat      = o["lat"].as<float>();
+  if (o["lon"].is<float>())              lon      = o["lon"].as<float>();
+}
+
+// ===========================================================================
 // Top-level settings
 // ===========================================================================
 void Settings::setDefaults() {
-  schemaVersion = 4;
+  schemaVersion = 5;
   wifiCount = 0;
   for (uint8_t i = 0; i < MAX_WIFI_NETS; i++) {
     wifi[i].ssid = "";
@@ -137,6 +165,7 @@ void Settings::setDefaults() {
 
   usage.setDefaults();
   clock.setDefaults();
+  weather.setDefaults();
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +195,8 @@ bool loadSettings(Settings& s) {
   // Migration: if the file predates schemaVersion 3, lift forward what we keep
   // (WiFi/AP/hostname/display/clock/httpTimeout), map any old mode to AUTO,
   // and seed autoRotateSec from the legacy carouselSec if present.
+  // schema 5 (3.3.0): added weather slice. Additive — a missing "weather"
+  // key is harmless; defaults (Bangkok) are applied below if absent.
   uint16_t fileVer = root["schemaVersion"].is<int>() ? (uint16_t)root["schemaVersion"].as<int>() : 0;
   if (fileVer < 3) {
     // settingsApplyJson handles both the legacy and v3 layouts and the legacy
@@ -246,6 +277,7 @@ void settingsToJson(const Settings& s, JsonObject root, bool includeSecrets) {
   // Feature slices. Authoritative display mode lives in usage.mode.
   s.usage.toJson(root["usage"].to<JsonObject>());
   s.clock.toJson(root["clock"].to<JsonObject>());
+  s.weather.toJson(root["weather"].to<JsonObject>());
 }
 
 // Apply only the keys that are present (partial update friendly). Accepts both
@@ -320,4 +352,5 @@ void settingsApplyJson(Settings& s, JsonObjectConst root) {
   JsonObjectConst u = root["usage"].is<JsonObjectConst>() ? root["usage"].as<JsonObjectConst>() : root;
   s.usage.fromJson(u);
   if (root["clock"].is<JsonObjectConst>()) s.clock.fromJson(root["clock"].as<JsonObjectConst>());
+  if (root["weather"].is<JsonObjectConst>()) s.weather.fromJson(root["weather"].as<JsonObjectConst>());
 }
