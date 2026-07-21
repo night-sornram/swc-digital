@@ -2,6 +2,7 @@
 #include "Platform.h"
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <MD5Builder.h>
 #include "webui.h"
 #include "Net.h"
 #include "Gfx.h"
@@ -59,6 +60,58 @@ static void handleIdentity() {
   String out;
   g_security.serializeIdentity(out);
   server.send(200, "application/json", out);
+}
+
+// MD5("admin:<realm>:<pairkey>") lowercase hex. Uses MD5Builder from the
+// ESP8266 core. Pure function so a future test can mirror it in Python.
+static String computeH1(const String& pairkey) {
+  MD5Builder md5;
+  md5.begin();
+  String s = String(SECURITY_USER) + ":" + SECURITY_REALM + ":" + pairkey;
+  md5.add(s);
+  md5.calculate();
+  return md5.toString();   // 32 lowercase hex
+}
+
+// AP-only, unpaired-only pairing endpoint. The owner reads the AP password
+// off the screen, joins the SmallTV-Setup AP, then POSTs the pair key they
+// chose (or that the Mac `pair` command generated for them).
+static void handlePair() {
+  // Hard guard: AP mode + unpaired. In STA mode this route is unreachable
+  // (it is registered but always 404s below). Re-check anyway in case of
+  // captive-portal weirdness.
+  if (netMode() != NET_AP) { server.send(404, "text/plain", "Not found"); return; }
+  if (g_security.paired() || g_security.hasH1()) {
+    server.send(409, "application/json", "{\"ok\":false,\"error\":\"already paired\"}");
+    return;
+  }
+  if (!server.hasArg("plain")) { server.send(400, "application/json", "{\"ok\":false,\"error\":\"no body\"}"); return; }
+
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain"))) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"bad json\"}");
+    return;
+  }
+  // Pair key: 16-char Crockford Base32 (the Mac `pair` command's format).
+  // We accept any non-empty printable string >=12 chars so a human-typed
+  // passphrase also works.
+  const char* key = doc["pairkey"] | "";
+  size_t len = strnlen(key, 256);
+  if (len < 12 || len > 128) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"pairkey must be 12..128 chars\"}");
+    return;
+  }
+  String h1 = computeH1(String(key));
+  if (!g_security.pair(h1)) {
+    server.send(409, "application/json", "{\"ok\":false,\"error\":\"pair failed\"}");
+    return;
+  }
+  // Persist into Settings so it survives reboot.
+  S->pairedH1 = h1;
+  saveSettings(*S);
+  server.send(200, "application/json", "{\"ok\":true}");
+  // Do NOT reboot: the device stays in AP mode and serves the WebUI with
+  // Digest now on, so the same browser session can finish configuration.
 }
 
 static void handleStatus() {
@@ -265,6 +318,7 @@ void webPortalBegin(Settings& settings) {
 
   // ---- public routes (no auth, ever) -------------------------------------
   server.on("/api/identity", HTTP_GET, handleIdentity);
+  server.on("/api/pair", HTTP_POST, handlePair);   // AP-only, unpaired-only
   server.on("/",             HTTP_GET, handleRoot);
   server.on("/api/config", HTTP_GET, handleGetConfig);
   server.on("/api/config", HTTP_POST, handlePostConfig);
