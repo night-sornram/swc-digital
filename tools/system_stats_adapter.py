@@ -35,10 +35,11 @@ def fetch() -> dict:
         # volume (/System/Volumes/Data) since Catalina. psutil.disk_usage('/')
         # only sees the system volume (tiny, ~7%). Use the data volume when
         # it exists so the percentage matches what Finder/About-This-Mac show.
-        # Linux/other: just use '/'.
-        disk_path = "/System/Volumes/Data"
+        # Note: os.path.ismount() returns False for firmlinks, so we check
+        # existence instead. Linux/other: just use '/'.
         import os
-        if not os.path.ismount(disk_path):
+        disk_path = "/System/Volumes/Data"
+        if not os.path.exists(disk_path):
             disk_path = "/"
         ssd = int(round(psutil.disk_usage(disk_path).percent))
     except Exception as exc:  # noqa: BLE001 — surface any failure to caller
