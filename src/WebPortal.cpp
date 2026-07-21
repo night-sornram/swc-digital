@@ -6,7 +6,8 @@
 #include "Net.h"
 #include "Gfx.h"
 #include "OtaUpdate.h"
-#include "UsageClient.h"
+#include "UsageApi.h"
+#include "features/usage/UsageStore.h"
 #include "Clock.h"
 
 // Defined in main.cpp — re-init every mode + force a repaint after a config change.
@@ -73,6 +74,18 @@ static void handleStatus() {
   o["night"]     = clockNightActive();   // dimming now
   o["nightHeld"] = clockNightHeld();      // in the window but waiting for a fresh NTP sync
   o["clockFresh"] = clockTrusted();       // last NTP sync within the trust window
+  // Hardware identity and usage overview (read-only; the refresh button must
+  // NOT trigger a provider API call).
+  o["hardware"] = "SmallTV-ultra · ESP8266";
+  o["chip"] = "esp8266";
+  {
+    String usageJson;
+    g_usageStore.serializeOverview(usageJson);
+    // Parse it back into the status doc (cheap; small object).
+    JsonDocument ud;
+    deserializeJson(ud, usageJson);
+    o["usage"] = ud.as<JsonObjectConst>();
+  }
 
   sendJson(doc);
 }
@@ -195,19 +208,6 @@ static void handleSelfUpdate() {
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
-// Push endpoint: the daemon POSTs the usage payload here when the device can't
-// reach it (Wi-Fi client isolation). Body is the {s,sr,w,wr,st,ok} contract.
-static void handleUsagePush() {
-  if (!server.hasArg("plain")) { server.send(400, "text/plain", "no body"); return; }
-#if WITH_USAGE
-  bool ok = usageApply(server.arg("plain"));
-#else
-  bool ok = false;
-#endif
-  server.send(ok ? 200 : 400, "application/json",
-              ok ? "{\"ok\":true}" : "{\"ok\":false}");
-}
-
 // ---- OTA ------------------------------------------------------------------
 static void handleUpdateDone() {
   bool ok = !Update.hasError();
@@ -264,8 +264,8 @@ void webPortalBegin(Settings& settings) {
   server.on("/api/import", HTTP_POST, handleImport);
   server.on("/api/checkupdate", HTTP_GET, handleCheckUpdate);
   server.on("/api/selfupdate", HTTP_POST, handleSelfUpdate);
-  server.on("/api/usage", HTTP_POST, handleUsagePush);   // daemon pushes usage here
   server.on("/update", HTTP_POST, handleUpdateDone, handleUpdateUpload);
+  usageApiBegin(server);   // registers GET + POST /api/usage
 
   // Common captive-portal probe endpoints
   server.on("/generate_204", handleNotFound);

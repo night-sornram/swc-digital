@@ -52,6 +52,11 @@ td{padding:6px 4px}
 .bar>div{height:100%;width:0;background:var(--acc2);transition:.2s}
 small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
 .chip{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;letter-spacing:.03em;background:var(--acc2);color:#fff;vertical-align:middle}
+.usage-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:6px}
+.usage-grid>div{background:#0b0e13;border:1px solid var(--bd);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:4px}
+.usage-grid>div>span:first-child{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.usage-grid>div>b{font-size:22px;font-weight:600}
+.usage-grid>div>span:last-child{font-size:12px}
 </style></head>
 <body>
 <header><span id="dot" class="dot"></span><h1>SmallTV</h1><span id="chip" class="chip" style="display:none"></span><span id="hi" class="muted"></span></header>
@@ -130,8 +135,33 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
 
  <!-- USAGE (feature) -->
  <section id="usage" class="tab">
-  <div class="card"><h2>Claude usage</h2>
-   <small class="hint">Plan 2 will populate this tab. The pull-mode URL has been removed in 3.0.0.</small>
+  <div class="card"><h2>Usage Display</h2>
+   <label>Mode</label>
+   <select id="usage-mode">
+    <option value="codex">Codex</option>
+    <option value="zai">Z.ai</option>
+    <option value="auto">Auto (rotate)</option>
+   </select>
+   <label>Auto rotation seconds (5&ndash;3600)</label>
+   <input id="usage-rotate" type="number" min="5" max="3600" step="1">
+  </div>
+  <div class="card"><h2>Codex</h2>
+   <div id="usage-codex" class="usage-grid">
+    <div><span>5H</span><b id="codex-5h">N/A</b><span id="codex-5h-reset" class="muted">RESET --</span></div>
+    <div><span>Weekly</span><b id="codex-wk">N/A</b><span id="codex-wk-reset" class="muted">RESET --</span></div>
+    <div><span>Age</span><b id="codex-age">--</b><span id="codex-state" class="muted">--</span></div>
+   </div>
+  </div>
+  <div class="card"><h2>Z.ai</h2>
+   <div id="usage-zai" class="usage-grid">
+    <div><span>5H</span><b id="zai-5h">N/A</b><span id="zai-5h-reset" class="muted">RESET --</span></div>
+    <div><span>Weekly</span><b id="zai-wk">N/A</b><span id="zai-wk-reset" class="muted">RESET --</span></div>
+    <div><span>Age</span><b id="zai-age">--</b><span id="zai-state" class="muted">--</span></div>
+   </div>
+  </div>
+  <div class="card">
+   <button class="btn sec" id="usage-refresh" type="button">Refresh status</button>
+   <small class="hint">Refresh only reads the device state. It does NOT trigger a provider API call.</small>
   </div>
  </section>
 
@@ -255,6 +285,11 @@ function loadConfig(){return j('/api/config').then(function(c){C=c;
  sv('carouselSec',c.carouselSec||30);
  sc('carouselUsage',c.carouselUsage!==false);
  var ap=$('apPass'); if(ap)ap.placeholder=c.apPassSet?'(unchanged)':'(open)';
+ // usage slice (3.0.0): the Usage tab's mode/rotate selectors.
+ if(c.usage){
+  sv('usage-mode',c.usage.mode||'auto');
+  sv('usage-rotate',c.usage.autoRotateSec!=null?c.usage.autoRotateSec:30);
+ }
 })}
 
 function esc(s){return (''+(s==null?'':s)).replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]})}
@@ -274,6 +309,9 @@ function collect(){
   o.clock={tz:_tzn,tzPosix:_tzp,
   nightEnabled:gc('nightEnabled'),nightStart:gv('nightStart')||'22:00',
   nightEnd:gv('nightEnd')||'07:00',nightLevel:parseInt(gv('nightLevel'))||0};}
+ // usage slice (3.0.0): mode + autoRotateSec live here, not in the top-level mode.
+ if($('usage-mode')){o.usage={mode:gv('usage-mode')||'auto',
+  autoRotateSec:parseInt(gv('usage-rotate'))||30};}
  return o;
 }
 function saveAll(){j('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(collect())})
@@ -331,6 +369,28 @@ function kv(k,v){return '<div class="kv"><span class="muted">'+k+'</span><b>'+v+
 function fmtUp(s){var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);
  return (d?d+'d ':'')+(h?h+'h ':'')+m+'m'}
 
+// Usage overview (3.0.0): fills the Codex/Z.ai cells from /api/status.usage.
+// read-only: never fire a provider API from the UI.
+function loadUsageOverview(){
+ j('/api/status').then(function(s){
+  var u=s.usage||{}; var ps=u.providers||[];
+  function byName(n){for(var i=0;i<ps.length;i++){if(ps[i].provider===n)return ps[i]}return null}
+  function fill(pre,p){
+   if(!p)return;
+   var f=p.five_hour||{}, w=p.weekly||{};
+   var ageS=(p.age_sec==null||p.age_sec<0)?'--':Math.floor(p.age_sec/60)+'m';
+   $(pre+'-5h').textContent=f.used_pct!=null?f.used_pct+'%':'N/A';
+   $(pre+'-5h-reset').textContent=f.reset_min!=null&&f.reset_min>=0?('RESET '+f.reset_min+'m'):'RESET --';
+   $(pre+'-wk').textContent=w.used_pct!=null?w.used_pct+'%':'N/A';
+   $(pre+'-wk-reset').textContent=w.reset_min!=null&&w.reset_min>=0?('RESET '+w.reset_min+'m'):'RESET --';
+   $(pre+'-age').textContent=ageS;
+   $(pre+'-state').textContent=p.stale?'STALE':'LIVE';
+  }
+  fill('codex',byName('codex'));
+  fill('zai',byName('zai'));
+ }).catch(function(){});
+}
+
 // GitHub self-update
 function checkUpdate(){$('ghMsg').textContent='Checking GitHub...';$('chkBtn').disabled=true;
  j('/api/checkupdate').then(function(u){$('chkBtn').disabled=false;
@@ -382,7 +442,9 @@ function upload(){var f=$('fw').files[0];if(!f){toast('Pick a .bin first');retur
  x.send(fd);
 }
 
-loadConfig().then(loadStatus);
+loadConfig().then(loadStatus).then(loadUsageOverview);
 setInterval(loadStatus,5000);
+// Refresh button (Usage tab): read-only — never fire a provider API from the UI.
+var _ur=$('usage-refresh'); if(_ur)_ur.onclick=loadUsageOverview;
 </script>
 </body></html>)HTMLPAGE";
