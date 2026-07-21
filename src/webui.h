@@ -118,6 +118,8 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
     <option value="zai">Z.ai</option>
     <option value="system">System (CPU/RAM/Storage)</option>
     <option value="auto">Auto (rotate)</option>
+    <option value="vitals">Vitals (Mac)</option>
+    <option value="weather">Weather + Clock</option>
    </select>
    <label>Default rotation seconds (2&ndash;3600, used when per-screen is 0)</label>
    <input id="usage-rotate" type="number" min="2" max="3600" step="1">
@@ -127,6 +129,18 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
     <div><label>System (s)</label><input id="usage-system-sec" type="number" min="0" max="3600" step="1"></div>
    </div>
    <small class="hint">0 = use default. Example: Codex 3, Z.ai 3, System 5.</small>
+  </div>
+  <div class="card" id="weather-card" style="display:none">
+   <h2>Weather location</h2>
+   <label>City label (short, on screen)</label>
+   <input type="text" id="weather-city" maxlength="6" placeholder="BKK">
+   <label>City name</label>
+   <input type="text" id="weather-city-name" maxlength="24" placeholder="Bangkok">
+   <label>Latitude</label>
+   <input type="text" id="weather-lat" placeholder="13.7563">
+   <label>Longitude</label>
+   <input type="text" id="weather-lon" placeholder="100.5018">
+   <small class="hint">The title bar shows the city label. The Mac adapter uses the lat/lon from <code>wifi-usage.toml</code> to fetch weather.</small>
   </div>
   <div class="card"><h2>Clock &amp; night mode</h2>
    <label>Timezone</label>
@@ -266,6 +280,11 @@ function loadConfig(){return j('/api/config').then(function(c){C=c;
   sv('usage-zai-sec',c.usage.zaiSec||0);
   sv('usage-system-sec',c.usage.systemSec||0);
  }
+ var w = c.weather || {};
+ if($('weather-city')) sv('weather-city', w.city || 'BKK');
+ if($('weather-city-name')) sv('weather-city-name', w.cityName || 'Bangkok');
+ if($('weather-lat')) sv('weather-lat', w.lat !== undefined ? w.lat : 13.7563);
+ if($('weather-lon')) sv('weather-lon', w.lon !== undefined ? w.lon : 100.5018);
 })}
 
 function esc(s){return (''+(s==null?'':s)).replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]})}
@@ -289,6 +308,7 @@ function collect(){
   codexSec:parseInt(gv('usage-codex-sec'))||0,
   zaiSec:parseInt(gv('usage-zai-sec'))||0,
   systemSec:parseInt(gv('usage-system-sec'))||0};}
+ if($('weather-card')){o.weather={city:gv('weather-city')||'BKK',cityName:gv('weather-city-name')||'Bangkok',lat:parseFloat(gv('weather-lat'))||13.7563,lon:parseFloat(gv('weather-lon'))||100.5018};}
  return o;
 }
 function saveAll(){j('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(collect())})
@@ -450,10 +470,13 @@ function upload(){var f=$('fw').files[0];if(!f){toast('Pick a .bin first');retur
  x.send(fd);
 }
 
+function syncWeatherCard(){var wm=gv('usage-mode');var wc=$('weather-card');if(wc)wc.style.display=(wm==='weather')?'':'none'}
+
 loadIdentity();
-loadConfig().then(loadStatus).then(loadUsageOverview);
+loadConfig().then(function(){syncWeatherCard()}).then(loadStatus).then(loadUsageOverview);
 setInterval(loadStatus,5000);
 // Refresh button (Usage tab): read-only — never fire a provider API from the UI.
 var _ur=$('usage-refresh'); if(_ur)_ur.onclick=loadUsageOverview;
+var _um=$('usage-mode'); if(_um)_um.addEventListener('change',syncWeatherCard);
 </script>
 </body></html>)HTMLPAGE";
