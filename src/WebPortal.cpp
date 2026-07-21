@@ -6,6 +6,7 @@
 #include "Net.h"
 #include "Gfx.h"
 #include "OtaUpdate.h"
+#include "Security.h"
 #include "UsageApi.h"
 #include "features/usage/UsageStore.h"
 #include "Clock.h"
@@ -49,6 +50,15 @@ static void handleGetConfig() {
   // Which chip this build runs on (the UI warns about per-chip limitations).
   root["chip"] = "esp8266";
   sendJson(doc);
+}
+
+// Public: device identity only. No credentials, no settings, no usage data.
+// This is the route the Mac pairing flow probes to confirm "yes this is the
+// device I think it is, with Device ID X".
+static void handleIdentity() {
+  String out;
+  g_security.serializeIdentity(out);
+  server.send(200, "application/json", out);
 }
 
 static void handleStatus() {
@@ -253,7 +263,9 @@ void webPortalBegin(Settings& settings) {
   // (success reboots into the new image before we ever get here).
   g_updateMsg = otaTakeBootResult();
 
-  server.on("/", HTTP_GET, handleRoot);
+  // ---- public routes (no auth, ever) -------------------------------------
+  server.on("/api/identity", HTTP_GET, handleIdentity);
+  server.on("/",             HTTP_GET, handleRoot);
   server.on("/api/config", HTTP_GET, handleGetConfig);
   server.on("/api/config", HTTP_POST, handlePostConfig);
   server.on("/api/status", HTTP_GET, handleStatus);
