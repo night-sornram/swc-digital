@@ -71,11 +71,49 @@ static void drawCard(int16_t y, const char* label, const UsageWindow& w,
   }
 }
 
+// SYSTEM-only: compact 3-card layout for CPU/RAM/SSD. Each card is shorter
+// (50 px tall) so three fit between the title bar (y=0..35) and the age row
+// (y=204..239). No reset countdown — system metrics don't have a "reset".
+static void drawSystemCard(int16_t y, const char* label, uint8_t pct, bool avail,
+                           uint16_t providerColor, bool stale) {
+  auto* d = gfxDev();
+  d->fillRoundRect(8, y, 224, 50, 5, USAGE_COLOR_CARD);
+  d->setTextColor(USAGE_COLOR_MUTED);
+  d->setTextSize(2);
+  d->setCursor(18, y + 6);
+  d->print(label);
+  d->setTextSize(3);
+  if (avail) {
+    d->setTextColor(barColorFor(pct, providerColor, stale));
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%u%%", pct);
+    int16_t tw = gfxTextW(buf, 3);
+    d->setCursor(222 - tw, y + 6);
+    d->print(buf);
+  } else {
+    d->setTextColor(USAGE_COLOR_MUTED);
+    const char* na = "N/A";
+    int16_t tw = gfxTextW(na, 3);
+    d->setCursor(222 - tw, y + 6);
+    d->print(na);
+  }
+  // Slim bar.
+  const int16_t by = y + 34, bh = 8, bx = 18, bw = 204;
+  d->fillRoundRect(bx, by, bw, bh, 3, USAGE_COLOR_BG);
+  if (avail && pct > 0) {
+    int16_t fw = (int16_t)(bw * (uint32_t)pct / 100UL);
+    if (fw < 3) fw = 3;
+    d->fillRoundRect(bx, by, fw, bh, 3, barColorFor(pct, providerColor, stale));
+  }
+}
+
 void UsageMode::begin(const Settings& s) {
   needsFullRedraw_ = true;
-  // Default the active provider from settings.mode: CODEX/ZAI pick directly,
-  // AUTO starts on CODEX.
-  active_ = (s.mode == MODE_ZAI) ? PROVIDER_ZAI : PROVIDER_CODEX;
+  // Default the active provider from settings.mode: CODEX/ZAI/SYSTEM pick
+  // directly, AUTO starts on CODEX.
+  if (s.mode == MODE_ZAI)         active_ = PROVIDER_ZAI;
+  else if (s.mode == MODE_SYSTEM) active_ = PROVIDER_SYSTEM;
+  else                            active_ = PROVIDER_CODEX;
 }
 
 void UsageMode::invalidate(const Settings& s) {
@@ -94,7 +132,13 @@ void UsageMode::setActiveProvider(UsageProvider p) {
 }
 
 void UsageMode::toggleAutoProvider() {
-  active_ = (active_ == PROVIDER_CODEX) ? PROVIDER_ZAI : PROVIDER_CODEX;
+  // Rotate CODEX → ZAI → SYSTEM → CODEX.
+  switch (active_) {
+    case PROVIDER_CODEX:  active_ = PROVIDER_ZAI;    break;
+    case PROVIDER_ZAI:    active_ = PROVIDER_SYSTEM; break;
+    case PROVIDER_SYSTEM:
+    default:              active_ = PROVIDER_CODEX;  break;
+  }
   needsFullRedraw_ = true;
 }
 
@@ -102,6 +146,50 @@ void UsageMode::service(const Settings& s) {
   const ProviderUsage& pu = g_usageStore.read(active_);
   bool stale = g_usageStore.stale(active_);
   uint16_t providerColor = usageProviderColor(active_);
+
+  // SYSTEM provider: dedicated 3-card compact layout. Keeps the same
+  // dirty-tracking model (full redraw only on enter / data change).
+  if (active_ == PROVIDER_SYSTEM) {
+    if (needsFullRedraw_) {
+      needsFullRedraw_ = false;
+      auto* d = gfxDev();
+      d->fillScreen(USAGE_COLOR_BG);
+      // Title bar.
+      d->fillRect(0, 0, 240, 35, USAGE_COLOR_CARD);
+      d->setTextColor(providerColor);
+      d->setTextSize(3);
+      d->setCursor(10, 8);
+      d->print(usageProviderLabel(active_));
+      d->setTextSize(2);
+      const char* pill = stale ? "STALE" : "LIVE";
+      d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
+      int16_t tw = gfxTextW(pill, 2);
+      d->setCursor(232 - tw, 10);
+      d->print(pill);
+      // 3 compact cards: CPU / RAM / SSD. five_hour=CPU, weekly=RAM, extra=SSD.
+      drawSystemCard(42,  "CPU", pu.fiveHour.usedPct, pu.fiveHour.available, providerColor, stale);
+      drawSystemCard(96,  "RAM", pu.weekly.usedPct,   pu.weekly.available,   providerColor, stale);
+      bool ssd_avail = (pu.extraPct != 0xFF);
+      drawSystemCard(150, "SSD", pu.extraPct,         ssd_avail,             providerColor, stale);
+      lastAgeMin_[active_]        = 0xFFFF;
+      lastStale_[active_]         = stale;
+      lastFiveHourOk_[active_]    = pu.lastOkMs;
+      lastWeeklyOk_[active_]      = pu.lastOkMs;
+      return;
+    }
+    // Partial: data changed → full repaint of card region (3 cards cheap).
+    if (pu.lastOkMs != lastFiveHourOk_[active_] || stale != lastStale_[active_]) {
+      drawSystemCard(42,  "CPU", pu.fiveHour.usedPct, pu.fiveHour.available, providerColor, stale);
+      drawSystemCard(96,  "RAM", pu.weekly.usedPct,   pu.weekly.available,   providerColor, stale);
+      bool ssd_avail = (pu.extraPct != 0xFF);
+      drawSystemCard(150, "SSD", pu.extraPct,         ssd_avail,             providerColor, stale);
+      lastFiveHourOk_[active_] = pu.lastOkMs;
+      lastWeeklyOk_[active_]   = pu.lastOkMs;
+      lastStale_[active_]      = stale;
+    }
+    // Age row (same as AI providers).
+    return;   // fall through below is the AI-provider path; SYSTEM returns here.
+  }
 
   // Full redraw path.
   if (needsFullRedraw_) {

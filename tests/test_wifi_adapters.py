@@ -219,7 +219,8 @@ class ServiceCliTests(unittest.TestCase):
             # v3.1: --once moved under the `run` subcommand.
             status = wifi_usage_service.main(["run", "--once"])
         self.assertEqual(status, 0)
-        self.assertEqual(step.call_count, 2)
+        # v3.2: three providers (codex, zai, system).
+        self.assertEqual(step.call_count, 3)
         sleep.assert_not_called()
 
 

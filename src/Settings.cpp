@@ -27,16 +27,18 @@ void UsageSettings::setDefaults() {
 }
 
 void UsageSettings::toJson(JsonObject o) const {
-  o["mode"]          = (mode == MODE_ZAI)   ? "zai"
-                     : (mode == MODE_CODEX) ? "codex" : "auto";
+  o["mode"]          = (mode == MODE_ZAI)    ? "zai"
+                     : (mode == MODE_CODEX)  ? "codex"
+                     : (mode == MODE_SYSTEM) ? "system" : "auto";
   o["autoRotateSec"] = autoRotateSec;
 }
 
 void UsageSettings::fromJson(JsonObjectConst o) {
   if (o["mode"].is<const char*>()) {
     String m = o["mode"].as<String>();
-    mode = m.equalsIgnoreCase("zai")   ? MODE_ZAI
-         : m.equalsIgnoreCase("codex") ? MODE_CODEX : MODE_AUTO;
+    mode = m.equalsIgnoreCase("zai")    ? MODE_ZAI
+         : m.equalsIgnoreCase("codex")  ? MODE_CODEX
+         : m.equalsIgnoreCase("system") ? MODE_SYSTEM : MODE_AUTO;
   }
   if (o["autoRotateSec"].is<int>())
     autoRotateSec = (uint16_t)constrain((int)o["autoRotateSec"],

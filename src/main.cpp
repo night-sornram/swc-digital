@@ -40,8 +40,9 @@ static uint32_t g_autoSwitch = 0;   // millis() of the last provider toggle
 
 static void applyMode(const Settings& s) {
   switch (s.usage.mode) {
-    case MODE_CODEX: g_usageMode.setActiveProvider(PROVIDER_CODEX); break;
-    case MODE_ZAI:   g_usageMode.setActiveProvider(PROVIDER_ZAI);   break;
+    case MODE_CODEX:  g_usageMode.setActiveProvider(PROVIDER_CODEX);  break;
+    case MODE_ZAI:    g_usageMode.setActiveProvider(PROVIDER_ZAI);    break;
+    case MODE_SYSTEM: g_usageMode.setActiveProvider(PROVIDER_SYSTEM); break;
     case MODE_AUTO:
     default: {
       // Start (or restart) on CODEX; reset timer whenever we (re)enter AUTO.

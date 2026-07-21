@@ -28,6 +28,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import codex_wifi_adapter
 import zai_wifi_adapter
+import system_stats_adapter
 import aiusage_mdns
 import device_client
 
@@ -131,7 +132,7 @@ def _make_body(provider_token: str, windows: dict) -> dict:
         return {"used_pct": w.get("used_pct"), "reset_min": w.get("reset_min")}
     fh = windows.get("five_hour")
     wk = windows.get("weekly")
-    return {
+    body = {
         "v": 1,
         "provider": provider_token,
         "five_hour_used_pct":  fh["used_pct"]  if fh else None,
@@ -139,6 +140,11 @@ def _make_body(provider_token: str, windows: dict) -> dict:
         "weekly_used_pct":     wk["used_pct"]  if wk else None,
         "weekly_reset_min":    wk["reset_min"] if wk else None,
     }
+    # SYSTEM provider carries an optional 3rd metric (SSD) that the AI
+    # providers never set. device_client accepts it iff present.
+    if "extra_pct" in windows and windows["extra_pct"] is not None:
+        body["extra_pct"] = windows["extra_pct"]
+    return body
 
 
 def _resolve_targets(cfg: dict) -> list[tuple[str, str]]:
@@ -164,8 +170,9 @@ def cmd_run(args) -> int:
     if not dev_id:
         log.warning("event=no_device_id hint=run 'wifi_usage_service.py pair' first")
 
-    codex_state = ProviderState(name="codex", fetch=codex_wifi_adapter.fetch)
-    zai_state   = ProviderState(name="zai",   fetch=zai_wifi_adapter.fetch)
+    codex_state  = ProviderState(name="codex",  fetch=codex_wifi_adapter.fetch)
+    zai_state    = ProviderState(name="zai",    fetch=zai_wifi_adapter.fetch)
+    system_state = ProviderState(name="system", fetch=system_stats_adapter.fetch)
 
     # Build the Digest opener once we have a pairkey. Cached per device id.
     opener_cache: dict[str, object] = {}
@@ -198,7 +205,7 @@ def cmd_run(args) -> int:
             if getattr(args, "once", False):
                 return 2
             time.sleep(interval_s); continue
-        for state in (codex_state, zai_state):
+        for state in (codex_state, zai_state, system_state):
             _step_provider(state, targets, interval_s, opener_for, dev_id)
         if getattr(args, "once", False):
             return 0
