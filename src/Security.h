@@ -29,10 +29,27 @@ class Security {
   void setH1(const String& h1);
   const String& h1() const;
 
-  // Authorize the current request. Returns true if allowed. In Plan 1 this
-  // is ALWAYS true (no auth yet) — the seam exists so Plan 2 can flip it to
-  // "Digest-verify against h1, exempt only in AP recovery mode".
-  // `recovery` = true is the AP-recovery escape hatch (Plan 2 fills it).
+  // True iff the device has a valid H1 stored (32-hex). Read-only convenience
+  // used by handlers to decide whether the device is in setup mode.
+  bool hasH1() const;
+
+  // Pair the device: store H1, mark paired. Returns false if already paired
+  // (caller 409s) or if h1 is not a 32-hex string. Persistence is the caller's
+  // job (WebPortal::handlePair writes Settings); this updates Security state
+  // only.
+  bool pair(const String& h1);
+
+  // AP-recovery escape hatch flag. When true, AP-mode handlers may relax
+  // routing (Plan 5 toggles this on entering AP setup mode). Does not bypass
+  // Digest on protected routes once paired.
+  void setRecoveryOpen(bool b);
+  bool recoveryOpen() const;
+
+  // Authorize the current request. Returns true if allowed.
+  //   recovery = true  => AP recovery mode: pair flow runs unpaired, every
+  //                       other route still requires Digest once paired.
+  //   recovery = false => STA mode: every protected route requires Digest.
+  // Unpaired devices (no H1) allow everything (they are in setup).
   // Uses ESP8266WebServer (the concrete type) so this header stays decoupled
   // from Platform.h; Platform.h's `using WebServerClass = ESP8266WebServer`
   // means callers can pass either name.
@@ -45,6 +62,7 @@ class Security {
   char   deviceId_[9] = {0};   // 8 hex chars + NUL
   bool   paired_      = false;
   String h1_;                  // MD5 hex, or empty
+  bool   recoveryOpen_ = false;
 };
 
 extern Security g_security;
