@@ -77,7 +77,7 @@ void ClockSettings::fromJson(JsonObjectConst o) {
 // Top-level settings
 // ===========================================================================
 void Settings::setDefaults() {
-  schemaVersion = 3;
+  schemaVersion = 4;
   wifiCount = 0;
   for (uint8_t i = 0; i < MAX_WIFI_NETS; i++) {
     wifi[i].ssid = "";
@@ -85,6 +85,7 @@ void Settings::setDefaults() {
   }
   apSsid  = DEFAULT_AP_SSID;
   apPass  = DEFAULT_AP_PASS;
+  pairedH1 = "";   // unpaired until /api/pair runs (Plan 2 Task 4)
   // Unique per device so several SmallTVs on one network don't collide on
   // mDNS out of the box. A hostname saved in config.json overrides this.
   hostname = String(DEFAULT_HOSTNAME) + "-" + String(platformChipId() & 0xFFFF, HEX);
@@ -148,6 +149,17 @@ bool loadSettings(Settings& s) {
     return true;
   }
 
+  // v3 -> v4: pairing state introduced. The device MUST boot unpaired
+  // (forced re-pair per spec). Drop any stale auth field a hand-edited
+  // config might carry; the user pairs fresh from Setup AP.
+  if (fileVer < 4) {
+    settingsApplyJson(s, root);
+    s.pairedH1     = "";          // forced re-pair
+    s.schemaVersion = 4;
+    saveSettings(s);
+    return true;
+  }
+
   settingsApplyJson(s, root);
   return true;
 }
@@ -187,6 +199,7 @@ void settingsToJson(const Settings& s, JsonObject root, bool includeSecrets) {
   root["apPassSet"]  = s.apPass.length() > 0;
   if (includeSecrets) {
     root["apPass"]   = s.apPass;
+    if (s.pairedH1.length()) root["pairedH1"] = s.pairedH1;   // hash only, never key
   }
 
   // Shared HTTP/display (no legacy staSsid/staPass mirror, no carouselSec,
@@ -249,6 +262,7 @@ void settingsApplyJson(Settings& s, JsonObjectConst root) {
   if (root["apSsid"].is<const char*>()) s.apSsid = root["apSsid"].as<String>();
   // AP password: apply as-is when present (empty allowed => open AP).
   if (root["apPass"].is<const char*>()) s.apPass = root["apPass"].as<String>();
+  if (root["pairedH1"].is<const char*>()) s.pairedH1 = root["pairedH1"].as<String>();
 
   // Legacy top-level "mode" token: stocks/usage/radar/carousel all map to
   // MODE_AUTO (the authoritative display mode lives in usage.mode now). Any

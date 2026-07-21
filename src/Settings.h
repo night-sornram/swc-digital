@@ -41,7 +41,7 @@ struct ClockSettings {
 
 // ---- Top-level settings ----------------------------------------------------
 struct Settings {
-  uint16_t schemaVersion;   // 3 after migration; 0 on a fresh chip
+  uint16_t schemaVersion;   // 4 after migration; 0 on a fresh chip
 
   // --- WiFi station networks (the device joins one of these) ---
   WifiCred wifi[MAX_WIFI_NETS];
@@ -50,6 +50,7 @@ struct Settings {
   // --- Access point (config / fallback hotspot) ---
   String apSsid;
   String apPass;        // empty => open network
+  String pairedH1;      // MD5("admin:<realm>:<pairkey>") hex, empty = unpaired
   String hostname;      // mDNS name => http://<hostname>.local
 
   // --- Active feature (kept for the mode-registry lookup; authoritative
