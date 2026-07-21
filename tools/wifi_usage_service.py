@@ -127,22 +127,22 @@ class ProviderState:
 
 
 def _make_body(provider_token: str, windows: dict) -> dict:
-    def _w(w):
+    def _w(w, key):
         if w is None: return None
-        return {"used_pct": w.get("used_pct"), "reset_min": w.get("reset_min")}
+        return w.get(key)
     fh = windows.get("five_hour")
     wk = windows.get("weekly")
     body = {
         "v": 1,
         "provider": provider_token,
-        "five_hour_used_pct":  fh["used_pct"]  if fh else None,
-        "five_hour_reset_min": fh["reset_min"] if fh else None,
-        "weekly_used_pct":     wk["used_pct"]  if wk else None,
-        "weekly_reset_min":    wk["reset_min"] if wk else None,
+        "five_hour_used_pct":  _w(fh, "used_pct"),
+        "five_hour_reset_min": _w(fh, "reset_min"),
+        "weekly_used_pct":     _w(wk, "used_pct"),
+        "weekly_reset_min":    _w(wk, "reset_min"),
     }
     # SYSTEM provider carries an optional 3rd metric (SSD) that the AI
     # providers never set. device_client accepts it iff present.
-    if "extra_pct" in windows and windows["extra_pct"] is not None:
+    if windows.get("extra_pct") is not None:
         body["extra_pct"] = windows["extra_pct"]
     return body
 
