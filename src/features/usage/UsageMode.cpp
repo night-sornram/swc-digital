@@ -184,28 +184,26 @@ static void drawVitalsBanner(int16_t y, uint8_t batteryPct, uint16_t uptimeMin,
   auto* d = gfxDev();
   d->fillRoundRect(8, y, 224, 30, 5, USAGE_COLOR_CARD);
   // Battery cell (left).
-  d->setTextSize(1);
-  d->setTextColor(USAGE_COLOR_MUTED);
-  d->setCursor(18, y + 10);
-  d->print("BAT");
   d->setTextSize(2);
+  d->setTextColor(USAGE_COLOR_MUTED);
+  d->setCursor(14, y + 8);
+  d->print("BAT");
   if (batteryPct != 0xFF) {
     d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
     char buf[8];
     snprintf(buf, sizeof(buf), "%u%%", batteryPct);
-    d->setCursor(48, y + 8);
+    d->setCursor(54, y + 8);
     d->print(buf);
   } else {
     d->setTextColor(USAGE_COLOR_MUTED);
-    d->setCursor(48, y + 8);
+    d->setCursor(54, y + 8);
     d->print("--");
   }
   // Uptime cell (right). Compact d/h/m.
-  d->setTextSize(1);
-  d->setTextColor(USAGE_COLOR_MUTED);
-  d->setCursor(140, y + 10);
-  d->print("UP");
   d->setTextSize(2);
+  d->setTextColor(USAGE_COLOR_MUTED);
+  d->setCursor(124, y + 8);
+  d->print("UP");
   d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
   if (uptimeMin != 0xFFFF) {
     char buf[16];
@@ -441,15 +439,15 @@ void UsageMode::service(const Settings& s) {
       d->setTextSize(3);
       char tb[8];
       snprintf(tb, sizeof(tb), "%uc", pu.fiveHour.usedPct);  // temp °C (use 'c' suffix)
-      d->setCursor(18, 118);
+      d->setCursor(18, 116);
       d->print(tb);
       d->setTextColor(USAGE_COLOR_MUTED);
-      d->setTextSize(1);
-      d->setCursor(18, 146);
+      d->setTextSize(2);
+      d->setCursor(18, 142);
       if (pu.weatherCode != 0xFF) d->print(wmoLabel(pu.weatherCode));
       else                         d->print("--");
       // Divider.
-      d->drawFastVLine(120, 118, 36, USAGE_COLOR_BG);
+      d->drawFastVLine(120, 116, 40, USAGE_COLOR_BG);
       // Right half: AQI index + PM2.5.
       uint8_t eaqi = pu.weekly.usedPct;
       d->setTextColor(aqiColor(eaqi));
@@ -457,16 +455,16 @@ void UsageMode::service(const Settings& s) {
       char ab[8];
       snprintf(ab, sizeof(ab), "%u", eaqi);
       int16_t aw = gfxTextW(ab, 3);
-      d->setCursor(232 - aw, 118);
+      d->setCursor(232 - aw, 116);
       d->print(ab);
-      d->setTextSize(1);
+      d->setTextSize(2);
       d->setTextColor(USAGE_COLOR_MUTED);
-      d->setCursor(132, 118);
+      d->setCursor(130, 116);
       d->print("AQI");
       if (pu.aqiPm25 != 0xFF) {
         char pb[16];
-        snprintf(pb, sizeof(pb), "PM2.5 %u", pu.aqiPm25);
-        d->setCursor(132, 146);
+        snprintf(pb, sizeof(pb), "PM %u", pu.aqiPm25);
+        d->setCursor(130, 142);
         d->print(pb);
       }
       lastFiveHourOk_[active_] = pu.lastOkMs;
@@ -482,28 +480,30 @@ void UsageMode::service(const Settings& s) {
       // Offset from Monday: (dow+6)%7
       int off = (dow + 6) % 7;
       static const char* DOW3 = "MTWTFSS";
-      d->setTextSize(1);
+      d->setTextSize(2);
       for (int i = 0; i < 7; i++) {
-        int x = 16 + i * 31;
-        // DOW label.
-        d->setTextColor(USAGE_COLOR_MUTED);
-        d->setCursor(x, 172);
-        char dl[2] = {DOW3[i], 0};
-        d->print(dl);
-        // Day number.
+        int x = 14 + i * 31;
+        // Day number (size 2 = readable).
         int slotDay = dd - off + i;
         bool isToday = (i == off);
         if (isToday) {
-          d->fillRoundRect(x - 2, 184, 24, 20, 3, providerColor);
+          d->fillRoundRect(x - 2, 178, 28, 24, 3, providerColor);
           d->setTextColor(USAGE_COLOR_BG);
         } else {
           d->setTextColor(USAGE_COLOR_TEXT);
         }
-        d->setTextSize(2);
         char db[4];
         snprintf(db, sizeof(db), "%d", slotDay);
-        d->setCursor(x, 186);
+        int16_t dw = gfxTextW(db, 2);
+        d->setCursor(x + (28 - dw) / 2, 180);
         d->print(db);
+        // DOW label (small, under the number).
+        d->setTextSize(1);
+        d->setTextColor(USAGE_COLOR_MUTED);
+        char dl[2] = {DOW3[i], 0};
+        d->setCursor(x + 10, 204);
+        d->print(dl);
+        d->setTextSize(2);
       }
       lastClockDay_ = (uint8_t)dd;
     }
