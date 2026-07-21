@@ -93,7 +93,7 @@ static void drawCard(int16_t y, const char* label, const UsageWindow& w,
                      uint16_t providerColor, bool stale) {
   auto* d = gfxDev();
   // Card background.
-  d->fillRoundRect(8, y, 224, 74, 6, USAGE_COLOR_CARD);
+  d->fillRoundRect(4, y, 232, 74, 6, USAGE_COLOR_CARD);
   // Label (top-left of card).
   d->setTextColor(USAGE_COLOR_MUTED);
   d->setTextSize(2);
@@ -106,17 +106,17 @@ static void drawCard(int16_t y, const char* label, const UsageWindow& w,
     char buf[8];
     snprintf(buf, sizeof(buf), "%u%%", w.usedPct);
     int16_t tw = gfxTextW(buf, 4);   // fallback: textWidth() unavailable in this GFX version
-    d->setCursor(222 - tw, y + 10);
+    d->setCursor(226 - tw, y + 10);
     d->print(buf);
   } else {
     d->setTextColor(USAGE_COLOR_MUTED);
     const char* na = "N/A";
     int16_t tw = gfxTextW(na, 4);    // fallback: textWidth() unavailable in this GFX version
-    d->setCursor(222 - tw, y + 10);
+    d->setCursor(226 - tw, y + 10);
     d->print(na);
   }
   // Progress bar (bottom of card).
-  const int16_t by = y + 42, bh = 8, bx = 18, bw = 204;
+  const int16_t by = y + 42, bh = 8, bx = 14, bw = 212;
   d->fillRoundRect(bx, by, bw, bh, 3, USAGE_COLOR_BG);
   if (w.available && w.usedPct > 0) {
     int16_t fw = (int16_t)(bw * (uint32_t)w.usedPct / 100UL);
@@ -148,7 +148,7 @@ static void drawCard(int16_t y, const char* label, const UsageWindow& w,
 static void drawSystemCard(int16_t y, const char* label, uint8_t pct, bool avail,
                            uint16_t providerColor, bool stale) {
   auto* d = gfxDev();
-  d->fillRoundRect(8, y, 224, 50, 5, USAGE_COLOR_CARD);
+  d->fillRoundRect(4, y, 232, 50, 5, USAGE_COLOR_CARD);
   d->setTextColor(USAGE_COLOR_MUTED);
   d->setTextSize(2);
   d->setCursor(18, y + 6);
@@ -159,17 +159,17 @@ static void drawSystemCard(int16_t y, const char* label, uint8_t pct, bool avail
     char buf[8];
     snprintf(buf, sizeof(buf), "%u%%", pct);
     int16_t tw = gfxTextW(buf, 3);
-    d->setCursor(222 - tw, y + 6);
+    d->setCursor(226 - tw, y + 6);
     d->print(buf);
   } else {
     d->setTextColor(USAGE_COLOR_MUTED);
     const char* na = "N/A";
     int16_t tw = gfxTextW(na, 3);
-    d->setCursor(222 - tw, y + 6);
+    d->setCursor(226 - tw, y + 6);
     d->print(na);
   }
   // Slim bar.
-  const int16_t by = y + 34, bh = 8, bx = 18, bw = 204;
+  const int16_t by = y + 34, bh = 8, bx = 14, bw = 212;
   d->fillRoundRect(bx, by, bw, bh, 3, USAGE_COLOR_BG);
   if (avail && pct > 0) {
     int16_t fw = (int16_t)(bw * (uint32_t)pct / 100UL);
@@ -185,7 +185,7 @@ static void drawVitalsCard(int16_t x, int16_t y, const char* label,
                            uint8_t pct, bool avail, bool isTemp,
                            uint16_t providerColor, bool stale) {
   auto* d = gfxDev();
-  d->fillRoundRect(x, y, 108, 70, 5, USAGE_COLOR_CARD);
+  d->fillRoundRect(x, y, 114, 70, 5, USAGE_COLOR_CARD);
   // Label (top).
   d->setTextColor(USAGE_COLOR_MUTED);
   d->setTextSize(2);
@@ -202,18 +202,18 @@ static void drawVitalsCard(int16_t x, int16_t y, const char* label,
       snprintf(buf, sizeof(buf), "%u%%", pct);
     }
     int16_t tw = gfxTextW(buf, 3);
-    d->setCursor(x + 100 - tw, y + 22);
+    d->setCursor(x + 106 - tw, y + 22);
     d->print(buf);
   } else {
     d->setTextColor(USAGE_COLOR_MUTED);
     const char* na = "--";
     int16_t tw = gfxTextW(na, 3);
-    d->setCursor(x + 100 - tw, y + 22);
+    d->setCursor(x + 106 - tw, y + 22);
     d->print(na);
   }
   // Slim bar (only for % metrics, not temp).
   if (!isTemp) {
-    const int16_t by = y + 54, bh = 6, bx = x + 8, bw = 92;
+    const int16_t by = y + 54, bh = 6, bx = x + 8, bw = 98;
     d->fillRoundRect(bx, by, bw, bh, 3, USAGE_COLOR_BG);
     if (avail && pct > 0) {
       int16_t fw = (int16_t)(bw * (uint32_t)pct / 100UL);
@@ -228,7 +228,7 @@ static void drawVitalsCard(int16_t x, int16_t y, const char* label,
 static void drawVitalsBanner(int16_t y, uint8_t batteryPct, uint16_t uptimeMin,
                              bool stale) {
   auto* d = gfxDev();
-  d->fillRoundRect(8, y, 224, 30, 5, USAGE_COLOR_CARD);
+  d->fillRoundRect(4, y, 232, 30, 5, USAGE_COLOR_CARD);
   // Battery cell (left).
   d->setTextSize(2);
   d->setTextColor(USAGE_COLOR_MUTED);
@@ -385,7 +385,7 @@ void UsageMode::service(const Settings& s) {
       d->print(pill);
       // CPU hero card (full width, VITALS style: label + big number).
       auto* d2 = gfxDev();
-      d2->fillRoundRect(8, 42, 224, 56, 5, USAGE_COLOR_CARD);
+      d2->fillRoundRect(4, 42, 232, 56, 5, USAGE_COLOR_CARD);
       d2->setTextColor(USAGE_COLOR_MUTED);
       d2->setTextSize(2);
       d2->setCursor(18, 48);
@@ -395,25 +395,25 @@ void UsageMode::service(const Settings& s) {
         d2->setTextColor(barColorFor(pu.fiveHour.usedPct, providerColor, stale));
         char buf[8]; snprintf(buf, sizeof(buf), "%u%%", pu.fiveHour.usedPct);
         int16_t tw2 = gfxTextW(buf, 4);
-        d2->setCursor(222 - tw2, 50);
+        d2->setCursor(226 - tw2, 50);
         d2->print(buf);
       } else {
         d2->setTextColor(USAGE_COLOR_MUTED);
         int16_t tw2 = gfxTextW("--", 4);
-        d2->setCursor(222 - tw2, 50);
+        d2->setCursor(226 - tw2, 50);
         d2->print("--");
       }
       // Slim bar.
-      d2->fillRoundRect(18, 82, 204, 8, 3, USAGE_COLOR_BG);
+      d2->fillRoundRect(14, 82, 212, 8, 3, USAGE_COLOR_BG);
       if (pu.fiveHour.available && pu.fiveHour.usedPct > 0) {
         int16_t fw = (int16_t)(204 * (uint32_t)pu.fiveHour.usedPct / 100UL);
         if (fw < 4) fw = 4;
-        d2->fillRoundRect(18, 82, fw, 8, 3, barColorFor(pu.fiveHour.usedPct, providerColor, stale));
+        d2->fillRoundRect(14, 82, fw, 8, 3, barColorFor(pu.fiveHour.usedPct, providerColor, stale));
       }
       // RAM + DISK side by side (half width).
-      drawVitalsCard(8,   104, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
+      drawVitalsCard(4,   104, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
       bool ssdAvail = (pu.extraPct != 0xFF);
-      drawVitalsCard(124, 104, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
+      drawVitalsCard(120, 104, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
       // Banner: battery + uptime.
       drawVitalsBanner(180, pu.batteryPct, pu.uptimeMin, stale);
       lastFiveHourOk_[active_] = pu.lastOkMs;
@@ -424,7 +424,7 @@ void UsageMode::service(const Settings& s) {
     if (pu.lastOkMs != lastFiveHourOk_[active_] || stale != lastStale_[active_]) {
       // CPU full width.
       auto* d3 = gfxDev();
-      d3->fillRoundRect(8, 42, 224, 56, 5, USAGE_COLOR_CARD);
+      d3->fillRoundRect(4, 42, 232, 56, 5, USAGE_COLOR_CARD);
       d3->setTextColor(USAGE_COLOR_MUTED);
       d3->setTextSize(2);
       d3->setCursor(18, 48);
@@ -434,23 +434,23 @@ void UsageMode::service(const Settings& s) {
         d3->setTextColor(barColorFor(pu.fiveHour.usedPct, providerColor, stale));
         char buf[8]; snprintf(buf, sizeof(buf), "%u%%", pu.fiveHour.usedPct);
         int16_t tw3 = gfxTextW(buf, 4);
-        d3->setCursor(222 - tw3, 50);
+        d3->setCursor(226 - tw3, 50);
         d3->print(buf);
       } else {
         d3->setTextColor(USAGE_COLOR_MUTED);
         int16_t tw3 = gfxTextW("--", 4);
-        d3->setCursor(222 - tw3, 50);
+        d3->setCursor(226 - tw3, 50);
         d3->print("--");
       }
-      d3->fillRoundRect(18, 82, 204, 8, 3, USAGE_COLOR_BG);
+      d3->fillRoundRect(14, 82, 212, 8, 3, USAGE_COLOR_BG);
       if (pu.fiveHour.available && pu.fiveHour.usedPct > 0) {
         int16_t fw = (int16_t)(204 * (uint32_t)pu.fiveHour.usedPct / 100UL);
         if (fw < 4) fw = 4;
-        d3->fillRoundRect(18, 82, fw, 8, 3, barColorFor(pu.fiveHour.usedPct, providerColor, stale));
+        d3->fillRoundRect(14, 82, fw, 8, 3, barColorFor(pu.fiveHour.usedPct, providerColor, stale));
       }
-      drawVitalsCard(8,   104, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
+      drawVitalsCard(4,   104, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
       bool ssdAvail = (pu.extraPct != 0xFF);
-      drawVitalsCard(124, 104, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
+      drawVitalsCard(120, 104, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
       drawVitalsBanner(180, pu.batteryPct, pu.uptimeMin, stale);
       lastFiveHourOk_[active_] = pu.lastOkMs;
       lastStale_[active_]      = stale;
@@ -550,7 +550,7 @@ void UsageMode::service(const Settings& s) {
     if (pu.lastOkMs != lastFiveHourOk_[active_]) {
       auto* d = gfxDev();
       // Card: temp + condition + icon, no Hi/Lo.
-      d->fillRoundRect(8, 148, 224, 70, 6, USAGE_COLOR_CARD);
+      d->fillRoundRect(4, 148, 232, 70, 6, USAGE_COLOR_CARD);
       // Icon (left, centered vertically in card).
       if (pu.weatherCode != 0xFF)
         drawWeatherIcon(36, 183, pu.weatherCode, providerColor);
