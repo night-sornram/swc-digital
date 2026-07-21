@@ -64,7 +64,6 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
  <button data-t="status" class="active">Status</button>
  <button data-t="wifi">WiFi</button>
  <button data-t="display">Display</button>
- <button data-t="usage">Usage</button>
  <button data-t="update">Update</button>
 </nav>
 <main>
@@ -112,6 +111,17 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
     <option value="2">180&deg;</option><option value="3">270&deg;</option></select>
    <div class="chk"><input id="backlightInverted" type="checkbox"><label>Backlight is active-low (try if screen stays dark)</label></div>
   </div>
+  <div class="card"><h2>Display mode</h2>
+   <label>What this device shows</label>
+   <select id="usage-mode">
+    <option value="codex">Codex</option>
+    <option value="zai">Z.ai</option>
+    <option value="system">System (CPU/RAM/SSD)</option>
+    <option value="auto">Auto (rotate)</option>
+   </select>
+   <label>Auto rotation seconds (5&ndash;3600)</label>
+   <input id="usage-rotate" type="number" min="5" max="3600" step="1">
+  </div>
   <div class="card"><h2>Clock &amp; night mode</h2>
    <label>Timezone</label>
    <select id="tz"></select>
@@ -124,21 +134,6 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
    <label>Night brightness: <span id="nlVal"></span>% <span class="muted">(0 = screen off)</span></label>
    <input id="nightLevel" type="range" min="0" max="100" oninput="nlVal.textContent=this.value">
    <small class="hint">Needs internet once to set the clock over NTP (no on-screen clock, this just drives the schedule). While the window is active it overrides the brightness and auto-brightness above. Times are local to the selected timezone; DST is handled automatically. After a reboot the schedule resumes once the clock re-syncs, so the screen may show normal brightness for a few seconds.</small>
-  </div>
- </section>
-
- <!-- USAGE (feature) -->
- <section id="usage" class="tab">
-  <div class="card"><h2>Usage Display</h2>
-   <label>Mode</label>
-   <select id="usage-mode">
-    <option value="codex">Codex</option>
-    <option value="zai">Z.ai</option>
-    <option value="system">System (CPU/RAM/SSD)</option>
-    <option value="auto">Auto (rotate)</option>
-   </select>
-   <label>Auto rotation seconds (5&ndash;3600)</label>
-   <input id="usage-rotate" type="number" min="5" max="3600" step="1">
   </div>
   <div class="card"><h2>Codex</h2>
    <div id="usage-codex" class="usage-grid">
