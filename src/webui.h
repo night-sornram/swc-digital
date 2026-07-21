@@ -120,14 +120,8 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
     <option value="vitals">Vitals (Mac)</option>
     <option value="weather">Weather + Clock</option>
    </select>
-   <label>Default rotation seconds (2&ndash;3600, used when per-screen is 0)</label>
+   <label>Rotation seconds per screen (2&ndash;3600)</label>
    <input id="usage-rotate" type="number" min="2" max="3600" step="1">
-   <div class="row" style="margin-top:8px">
-    <div><label>Codex (s)</label><input id="usage-codex-sec" type="number" min="0" max="3600" step="1"></div>
-    <div><label>Z.ai (s)</label><input id="usage-zai-sec" type="number" min="0" max="3600" step="1"></div>
-    <div><label>Vitals (s)</label><input id="usage-system-sec" type="number" min="0" max="3600" step="1"></div>
-   </div>
-   <small class="hint">0 = use default. Example: Codex 3, Z.ai 3, System 5.</small>
   </div>
   <div class="card" id="weather-card" style="display:none">
    <h2>Weather location</h2>
@@ -275,9 +269,6 @@ function loadConfig(){return j('/api/config').then(function(c){C=c;
  if(c.usage){
   sv('usage-mode',c.usage.mode||'auto');
   sv('usage-rotate',c.usage.autoRotateSec!=null?c.usage.autoRotateSec:30);
-  sv('usage-codex-sec',c.usage.codexSec||0);
-  sv('usage-zai-sec',c.usage.zaiSec||0);
-  sv('usage-system-sec',c.usage.systemSec||0);
  }
  var w = c.weather || {};
  if($('weather-city')) sv('weather-city', w.city || 'BKK');
@@ -303,10 +294,7 @@ function collect(){
   nightEnd:gv('nightEnd')||'07:00',nightLevel:parseInt(gv('nightLevel'))||0};}
  // usage slice (3.0.0): mode + autoRotateSec live here, not in the top-level mode.
  if($('usage-mode')){o.usage={mode:gv('usage-mode')||'auto',
-  autoRotateSec:parseInt(gv('usage-rotate'))||30,
-  codexSec:parseInt(gv('usage-codex-sec'))||0,
-  zaiSec:parseInt(gv('usage-zai-sec'))||0,
-  systemSec:parseInt(gv('usage-system-sec'))||0};}
+  autoRotateSec:parseInt(gv('usage-rotate'))||30};}
  if($('weather-card')){o.weather={city:gv('weather-city')||'BKK',cityName:gv('weather-city-name')||'Bangkok',lat:parseFloat(gv('weather-lat'))||13.7563,lon:parseFloat(gv('weather-lon'))||100.5018};}
  return o;
 }

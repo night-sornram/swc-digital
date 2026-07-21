@@ -250,18 +250,10 @@ void loop() {
   clockService(g_settings);
   appApplyBrightness();
 
-  // AUTO rotation: each provider can have its own dwell time.
-  // Falls back to autoRotateSec when the per-provider value is 0.
+  // AUTO rotation: single dwell time for all providers.
   if (g_settings.usage.mode == MODE_AUTO) {
     if (g_autoSwitch == 0) g_autoSwitch = millis();
-    // Pick dwell based on the currently-active provider.
-    uint16_t dwell = g_settings.usage.autoRotateSec;   // default
-    switch (g_usageMode.activeProvider()) {
-      case PROVIDER_CODEX:   dwell = g_settings.usage.codexSec  ?: dwell; break;
-      case PROVIDER_ZAI:     dwell = g_settings.usage.zaiSec    ?: dwell; break;
-      case PROVIDER_VITALS:  dwell = g_settings.usage.systemSec ?: dwell; break;
-      case PROVIDER_WEATHER: dwell = g_settings.usage.systemSec ?: dwell; break;
-    }
+    uint16_t dwell = g_settings.usage.autoRotateSec;
     if (millis() - g_autoSwitch >= (uint32_t)dwell * 1000UL) {
       g_autoSwitch = millis();
       g_usageMode.toggleAutoProvider();
