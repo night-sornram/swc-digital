@@ -1,0 +1,23 @@
+# SWC Digital 3.0.0 — Wi-Fi usage push service example config.
+# Copy to tools/wifi-usage.toml (gitignored) and edit.
+
+[service]
+interval_seconds = 60
+stale_after_seconds = 180     # informational: the device enforces this itself
+discovery = "mdns"
+mdns_timeout_seconds = 2.0
+
+# Explicit push URLs. Used as-is AND merged with mDNS results.
+# Empty by default; mDNS discovery usually finds the device on its own.
+# Example: urls = [ "http://192.168.1.42/api/usage" ]
+urls = []
+
+# Codex reads its OAuth token from ~/.codex/auth.json by default.
+# Override the path here if needed:
+# [codex]
+# auth_file = "~/.codex/auth.json"
+
+# z.ai reads ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN from ~/.claude/settings.json.
+# Override the path here if needed:
+# [zai]
+# claude_settings = "~/.claude/settings.json"

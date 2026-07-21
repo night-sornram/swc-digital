@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.night.swc-digital-wifi-usage</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>REPLACE_WITH_ABSOLUTE_PATH_TO_UV</string>
+    <string>run</string>
+    <string>--with</string>
+    <string>zeroconf</string>
+    <string>REPLACE_WITH_ABSOLUTE_PATH_TO_REPOSITORY/tools/wifi_usage_service.py</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>WIFI_USAGE_CONFIG</key>
+    <string>REPLACE_WITH_ABSOLUTE_PATH_TO_PRIVATE_wifi-usage.toml</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>REPLACE_WITH_ABSOLUTE_PATH_TO_LOG/swc-digital-wifi-usage.log</string>
+  <key>StandardErrorPath</key>
+  <string>REPLACE_WITH_ABSOLUTE_PATH_TO_LOG/swc-digital-wifi-usage.log</string>
+</dict>
+</plist>
