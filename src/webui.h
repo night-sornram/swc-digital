@@ -1,8 +1,7 @@
 // webui.h — single-page config UI served from PROGMEM
 //
-// Tabs are segmented per feature: shared Status/WiFi/Display/Update plus one tab
-// per feature (Ticker / Usage; Radar is added with WITH_RADAR). The config JSON
-// mirrors the nested Settings layout: { ..shared.., ticker:{...}, usage:{...} }.
+// Tabs are segmented: shared Status/WiFi/Display/Update plus the Usage tab.
+// The config JSON mirrors the nested Settings layout: { ..shared.., usage:{...} }.
 #pragma once
 #include <Arduino.h>
 
@@ -60,17 +59,13 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
  <button data-t="status" class="active">Status</button>
  <button data-t="wifi">WiFi</button>
  <button data-t="display">Display</button>
- <button data-t="ticker">Ticker</button>
  <button data-t="usage">Usage</button>
- <button data-t="radar">Radar</button>
  <button data-t="update">Update</button>
 </nav>
 <main>
  <!-- STATUS -->
  <section id="status" class="tab active">
   <div class="card"><h2>Device</h2><div id="statusBox" class="muted">Loading...</div></div>
-  <div class="card"><h2>Tickers</h2><div id="tickBox" class="muted">-</div>
-   <button class="btn sec" style="margin-top:10px" onclick="refreshNow()">Refresh data now</button></div>
  </section>
 
  <!-- WIFI -->
@@ -100,16 +95,12 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
   <div class="card"><h2>Mode</h2>
    <label>What this device shows</label>
    <select id="mode" onchange="modeChanged()">
-    <option value="stocks">Stock / crypto ticker</option>
     <option value="usage">Claude usage</option>
-    <option value="radar">Plane radar</option>
     <option value="carousel">Carousel (rotate modes)</option>
    </select>
    <div id="carouselRow">
     <label>Switch mode every (s)</label><input id="carouselSec" type="number" min="5" max="3600">
-    <div class="chk"><input id="carouselTicker" type="checkbox"><label>Ticker</label></div>
     <div class="chk"><input id="carouselUsage" type="checkbox"><label>Claude usage</label></div>
-    <div class="chk"><input id="carouselRadar" type="checkbox"><label>Plane radar</label></div>
    </div>
    <small class="hint">Pick the active feature, then configure it in its own tab. Carousel rotates through the ticked features.</small>
   </div>
@@ -137,116 +128,10 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
   </div>
  </section>
 
- <!-- TICKER (feature) -->
- <section id="ticker" class="tab">
-  <div class="card"><h2>Rotation &amp; data</h2>
-   <div class="row">
-    <div><label>Show each ticker (s)</label><input id="rotateSec" type="number" min="2" max="300"></div>
-    <div><label>Refresh data (s)</label><input id="pollSec" type="number" min="10" max="3600"></div>
-   </div>
-   <div class="row">
-    <div><label>Chart timeframe</label>
-     <select id="range">
-      <option value="1d">1 day</option><option value="5d">5 days</option>
-      <option value="1mo">1 month</option><option value="3mo">3 months</option>
-      <option value="6mo">6 months</option><option value="ytd">Year to date</option>
-      <option value="1y">1 year</option><option value="2y">2 years</option>
-      <option value="5y">5 years</option><option value="max">Max</option>
-     </select></div>
-    <div><label>Chart points</label><input id="points" type="number" min="0" max="60"></div>
-   </div>
-   <div class="row">
-    <div><label>Change &amp; % basis</label>
-     <select id="changeOnRange">
-      <option value="true">Chart timeframe</option>
-      <option value="false">1 day</option>
-     </select></div>
-   </div>
-   <small class="hint">Chart timeframe: the change, arrow, colors, and chart cover the same span, so they agree. Needs chart data (2+ points); without it the device falls back to the 1-day change. At 1 day it measures from the session's first data point, so overnight gaps are not counted. 1 day: the classic change vs the previous close, which can point the other way than a longer chart.</small>
-   <label>Webhook URL <span class="muted">(only for tickers set to Webhook)</span></label>
-   <input id="webhookUrl" type="url" placeholder="http://n8n.local:5678/webhook/stock">
-  </div>
-  <div class="card"><h2>Color scheme</h2>
-   <select id="colorInverted"><option value="false">Green up / Red down</option>
-    <option value="true">Red up / Green down</option></select>
-  </div>
-  <div class="card"><h2>What to show</h2>
-   <div class="chk"><input id="showName" type="checkbox"><label>Name / symbol</label></div>
-   <div class="chk"><input id="showPrice" type="checkbox"><label>Price</label></div>
-   <div class="chk"><input id="showChange" type="checkbox"><label>Change &amp; % change</label></div>
-   <div class="chk"><input id="showChart" type="checkbox"><label>Sparkline chart</label></div>
-   <div class="chk"><input id="showRangeLabel" type="checkbox"><label>Timeframe label</label></div>
-   <div class="chk"><input id="showUpdatedAgo" type="checkbox"><label>"Updated N s ago"</label></div>
-   <div class="chk"><input id="showPageDots" type="checkbox"><label>Rotation dots</label></div>
-   <div class="chk"><input id="showPortfolio" type="checkbox"><label>Position P/L &amp; portfolio page</label></div>
-  </div>
-  <div class="card"><h2>Tickers (rotate on screen)</h2>
-   <table id="symTable"></table>
-   <button class="btn sec" style="margin-top:10px" onclick="addSym()">+ Add ticker</button>
-   <small class="hint" id="symHint"></small>
-  </div>
-  <div class="card"><h2>cash.ch symbol finder</h2>
-   <label>Instrument <span class="muted">(paste a cash.ch link, ISIN, valor, or a name)</span></label>
-   <div class="row">
-    <input id="cashQ" type="text" placeholder="https://www.cash.ch/... or EU0009654078">
-    <button class="btn sec" style="flex:0 0 auto" onclick="cashFind()">Find</button>
-   </div>
-   <div id="cashRes"></div>
-   <small class="hint">Searches cash.ch from your browser and turns the result into the listing key the ticker needs. Click a match to add it as a ticker.</small>
-  </div>
- </section>
-
  <!-- USAGE (feature) -->
  <section id="usage" class="tab">
   <div class="card"><h2>Claude usage</h2>
-   <label>Usage daemon URL</label>
-   <input id="usageUrl" type="url" placeholder="http://192.168.1.10:8787/">
-   <label>Refresh data (s)</label><input id="usagePollSec" type="number" min="10" max="3600">
-   <small class="hint">Runs on the PC-side <a href="https://github.com/giovi321/clawdmeter-daemon" target="_blank">clawdmeter-daemon</a>, which reads your Claude usage and sends it here. <b>Pull:</b> set the Usage URL to the daemon. <b>Push:</b> leave it blank and run the daemon with <code>--push-to &lt;hostname&gt;.local</code> (for networks where the device cannot reach the PC). Running several SmallTVs? Give each a unique hostname in the WiFi tab so every PC pushes to its own device. Idle animation plays until data arrives.</small>
-  </div>
- </section>
-
- <!-- RADAR (feature) -->
- <section id="radar" class="tab">
-  <div class="card"><h2>Home location</h2>
-   <div class="row">
-    <div><label>Latitude</label><input id="radarLat" type="number" step="0.0001" placeholder="52.3676"></div>
-    <div><label>Longitude</label><input id="radarLon" type="number" step="0.0001" placeholder="4.9041"></div>
-   </div>
-   <small class="hint">The radar centres on this point. Decimal degrees, e.g. <code>52.3676</code>, <code>4.9041</code>. Leave at 0/0 and the screen prompts you to set it.</small>
-  </div>
-  <div class="card"><h2>Range &amp; data</h2>
-   <div class="row">
-    <div><label>Range</label>
-     <select id="rangeKm"><option value="5">5</option><option value="10">10</option>
-      <option value="15">15</option><option value="25">25</option><option value="50">50</option></select></div>
-    <div><label>Units</label>
-     <select id="unitsMi"><option value="false">km</option><option value="true">mi</option></select></div>
-    <div><label>Refresh (s)</label><input id="radarPollSec" type="number" min="3" max="3600"></div>
-   </div>
-   <label>Data source</label>
-   <select id="radarSource" onchange="radarSrcChanged()">
-    <option value="direct">adsb.fi (direct, no server)</option>
-    <option value="webhook">Custom webhook (LAN proxy)</option>
-   </select>
-   <div id="radarWebhookRow"><label>Webhook URL</label>
-    <input id="radarWebhookUrl" type="url" placeholder="http://n8n.local:5678/webhook/radar"></div>
-   <small class="hint" id="radarSrcHint"></small>
-  </div>
-  <div class="card"><h2>What to show</h2>
-   <label>Marker &amp; label size</label>
-   <select id="radarUiScale"><option value="0">Small</option><option value="1">Medium</option><option value="2">Large</option></select>
-   <label style="margin-top:12px">Hide aircraft below (ft, 0 = show all)</label>
-   <input id="radarMinAlt" type="number" min="0" max="60000" step="100">
-   <small class="hint">Drops ground traffic (parked/taxiing) and low flights. Try <code>500</code> to hide anything on or near the ground.</small>
-   <div class="chk" style="margin-top:12px"><input id="showLabels" type="checkbox"><label>Callsign &amp; altitude labels</label></div>
-   <div class="chk"><input id="showVectors" type="checkbox"><label>Speed / heading vectors</label></div>
-   <div class="chk"><input id="showRimDots" type="checkbox"><label>Off-screen traffic dots on the rim</label></div>
-  </div>
-  <div class="card"><h2>Airports</h2>
-   <table id="apTable"></table>
-   <button class="btn sec" style="margin-top:10px" onclick="addAp()">+ Add airport</button>
-   <small class="hint">A few home-area airports drawn as markers. ICAO code (e.g. <code>LSZH</code>) and its lat/lon. Up to 6.</small>
+   <small class="hint">Plan 2 will populate this tab. The pull-mode URL has been removed in 3.0.0.</small>
   </div>
  </section>
 
@@ -306,11 +191,7 @@ document.querySelectorAll('nav button').forEach(function(b){b.onclick=function()
  b.classList.add('active');$(b.dataset.t).classList.add('active');
 }});
 
-// field groups by their location in the nested config
-var T_TEXT=['webhookUrl','range'];                   // ticker strings
-var T_NUM=['rotateSec','pollSec','points'];          // ticker numbers
-var T_BOOL=['showName','showPrice','showChange','showChart','showRangeLabel','showUpdatedAgo','showPageDots','showPortfolio'];
-
+// field groups by their location in the nested config (ticker-only fields removed)
 // IANA -> POSIX TZ. The device stores/uses the POSIX rule; this map lives in the
 // browser so the firmware carries no tz database (same idea as the cash finder).
 var TZMAP={
@@ -342,8 +223,8 @@ var TZMAP={
 function fillTz(){var s=$('tz');if(!s)return;var keys=Object.keys(TZMAP).filter(function(k){return k!==''});
  keys.sort();s.innerHTML='<option value="">UTC</option>'+keys.map(function(k){return '<option value="'+k+'">'+k+'</option>'}).join('');}
 
-var MODEOPT={ticker:'stocks',usage:'usage',radar:'radar'};
-var CAROPT={ticker:'carouselTicker',usage:'carouselUsage',radar:'carouselRadar'};
+var MODEOPT={usage:'usage'};
+var CAROPT={usage:'carouselUsage'};
 function hideFeat(name){
  var b=document.querySelector('nav button[data-t="'+name+'"]'); if(b)b.remove();
  var sec=$(name); if(sec)sec.remove();
@@ -353,8 +234,7 @@ function hideFeat(name){
 function modeChanged(){if(!$('mode'))return;
  $('carouselRow').style.display=$('mode').value==='carousel'?'block':'none';}
 function loadConfig(){return j('/api/config').then(function(c){C=c;
- var f=c.features||{}; ['ticker','usage','radar'].forEach(function(k){if(f[k]===false)hideFeat(k)});
- var t=c.ticker||{}, u=c.usage||{};
+ var f=c.features||{}; ['usage'].forEach(function(k){if(f[k]===false)hideFeat(k)});
  // shared
  ['apSsid','apPass','hostname'].forEach(function(k){$(k).value=c[k]!=null?c[k]:''});
  renderWifi(c.wifi||(c.staSsid?[{ssid:c.staSsid,passSet:c.staPassSet}]:[]));
@@ -371,124 +251,29 @@ function loadConfig(){return j('/api/config').then(function(c){C=c;
  sv('tz',ck.tz||''); sc('nightEnabled',!!ck.nightEnabled);
  sv('nightStart',ck.nightStart||'22:00'); sv('nightEnd',ck.nightEnd||'07:00');
  sv('nightLevel',ck.nightLevel!=null?ck.nightLevel:0); $('nlVal')&&($('nlVal').textContent=(ck.nightLevel!=null?ck.nightLevel:0));
- $('mode').value=c.mode||'stocks'; modeChanged();
+ $('mode').value=c.mode||'usage'; modeChanged();
  sv('carouselSec',c.carouselSec||30);
- sc('carouselTicker',c.carouselTicker!==false); sc('carouselUsage',c.carouselUsage!==false); sc('carouselRadar',c.carouselRadar!==false);
- // ticker slice
- T_TEXT.forEach(function(k){sv(k,t[k])});
- T_NUM.forEach(function(k){sv(k,t[k])});
- T_BOOL.forEach(function(k){sc(k,t[k])});
- sv('colorInverted',t.colorInverted?'true':'false');
- sv('changeOnRange',t.changeOnRange===false?'false':'true');
- renderSyms(t.symbols||[]); symHintFor('yahoo');
- // usage slice
- sv('usageUrl',u.usageUrl);
- sv('usagePollSec',u.pollSec);
- // radar slice
- var r=c.radar||{};
- sv('radarLat',r.lat); sv('radarLon',r.lon);
- sv('rangeKm',r.rangeKm||20);
- sv('unitsMi',r.unitsMi?'true':'false');
- sv('radarPollSec',r.pollSec);
- sv('radarSource',r.source||'direct'); radarSrcChanged();
- sv('radarWebhookUrl',r.webhookUrl);
- sc('showLabels',r.showLabels); sc('showVectors',r.showVectors); sc('showRimDots',r.showRimDots);
- sv('radarUiScale',r.uiScale!=null?r.uiScale:1);
- sv('radarMinAlt',r.minAltFt!=null?r.minAltFt:0);
- renderAps(r.airports||[]);
+ sc('carouselUsage',c.carouselUsage!==false);
  var ap=$('apPass'); if(ap)ap.placeholder=c.apPassSet?'(unchanged)':'(open)';
 })}
 
 function esc(s){return (''+(s==null?'':s)).replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]})}
-function symHintFor(v){var h=$('symHint');if(!h)return;
- h.innerHTML=(v==='cash'
-  ?'<b>cash.ch</b>: fetched directly by the device. The symbol is a listing key like <code>147478611-246-333</code>; the finder below turns a cash.ch link, ISIN, or name into one.'
-   +(C.chip==='esp8266'?' <b>On this ESP8266</b>, cash.ch\'s TLS is beyond this chip &mdash; use the <b>GitHub</b> source for the same listing key instead (a scheduled workflow publishes it). The ESP32 boards fetch cash.ch directly.':'')
-  :v==='github'
-  ?'<b>GitHub</b>: reads a listing key\'s quote from a small JSON file the repo\'s <code>quotes</code> workflow publishes (a proxy for cash.ch on chips that can\'t reach it directly). The symbol is the cash.ch listing key, and it must be listed in <code>quotes-config.json</code>.'
-  :v==='webhook'
-  ?'<b>Webhook</b>: the device asks the webhook URL above and passes the symbol through as-is, so use whatever your endpoint understands.'
-  :'<b>Yahoo Finance</b>: fetched directly by the device. Use Yahoo symbols: <code>AAPL</code>, <code>NESN.SW</code> (Swiss stocks end in <code>.SW</code>), <code>BTC-USD</code>, <code>EURUSD=X</code>.')
-  +' Name is optional; if set it overrides the source\'s name. Qty and per-unit cost are optional too: set both and the ticker shows your P/L plus a portfolio summary page.';}
-
-// cash.ch symbol finder: runs in YOUR browser (cash.ch answers cross-origin),
-// the device itself is not involved in the search.
-function cashFind(){var q=gv('cashQ').trim();if(!q){toast('Paste a link, ISIN, or name first');return}
- var m=q.match(/^https?:\/\/\S*?(\d{5,12})/); if(m)q=m[1];   // a cash.ch link carries the valor in its slug
- $('cashRes').innerHTML='<div class="muted">Searching cash.ch...</div>';
- var gq='query{textSearch(publication:CASH,search:"'+q.replace(/["\\]/g,'')+'",sort:Relevance,sortOrder:Descending,limit:10,offset:0){'+
-  'equity{items{...on Equity{listingId mName market mCur mIsin}}} fund{items{...on Fund{listingId mName market mCur mIsin}}} '+
-  'derivative{items{...on Derivative{listingId mName market mCur mIsin}}} bond{items{...on Bond{listingId mName market mCur mIsin}}} '+
-  'index{items{...on Index{listingId mName market mCur}}} diverse{items{...on Diverse{listingId mName market mCur mIsin}}} '+
-  'cryptoCurrency{items{...on CryptoCurrency{listingId mName market mCur}}}}}';
- fetch('https://www.cash.ch/_/api/graphql/prod?query='+encodeURIComponent(gq))
- .then(function(r){return r.json()})
- .then(function(d){var out=[];var b=(d.data&&d.data.textSearch)||{};
-  ['equity','derivative','fund','bond','index','diverse','cryptoCurrency'].forEach(function(k){
-   ((b[k]&&b[k].items)||[]).forEach(function(it){if(it&&it.listingId)out.push(it)});});
-  if(!out.length){$('cashRes').innerHTML='<div class="muted">Nothing found on cash.ch</div>';return}
-  var h='';out.slice(0,10).forEach(function(it){
-   h+='<div class="net" onclick="cashPick(this.dataset.k)" data-k="'+esc(it.listingId)+'"><span>'+esc(it.mName||'?')+
-    ' <span class="muted">'+esc(it.mIsin||'')+'</span></span><span class="muted">'+esc(it.market||'')+' '+esc(it.mCur||'')+'</span></div>';});
-  $('cashRes').innerHTML=h;
- }).catch(function(){$('cashRes').innerHTML='<div class="muted">cash.ch not reachable from this browser</div>'});}
-function cashPick(k){var rows=document.querySelectorAll('#symTable tr');var tr=null;
- for(var i=0;i<rows.length;i++){if(!rows[i].querySelector('.s').value.trim()){tr=rows[i];break}}
- if(!tr){if(rows.length>=8){toast('Max 8');return}addRow({});tr=$('symTable').lastChild}
- tr.querySelector('.s').value=k;tr.querySelector('.src').value='cash';symHintFor('cash');
- toast('Added '+k+'. Set a name, then Save.');}
-function radarSrcChanged(){if(!$('radarSource'))return;var d=$('radarSource').value!=='webhook';
- $('radarWebhookRow').style.display=d?'none':'block';
- $('radarSrcHint').innerHTML=d
-  ?'The device fetches <b>adsb.fi</b> directly over HTTPS (no key, ~1 req/s). Tight on RAM in busy airspace — use the webhook if it drops.'
-  :'The device requests <code>?lat=..&amp;lon=..&amp;dist=..</code> from your LAN proxy, which pre-filters adsb.fi to a small JSON. Most reliable on the ESP8266.';}
 
 function collect(){
  var o={mode:gv('mode'),
   carouselSec:parseInt(gv('carouselSec'))||30,
-  carouselTicker:gc('carouselTicker'), carouselUsage:gc('carouselUsage'), carouselRadar:gc('carouselRadar'),
+  carouselUsage:gc('carouselUsage'),
   brightness:parseInt(gv('brightness'))||0,
   rotation:parseInt(gv('rotation')),
   autoBrightness:gc('autoBrightness'),
   backlightInverted:gc('backlightInverted'),
   hostname:gv('hostname'), apSsid:gv('apSsid'), apPass:gv('apPass'),
   wifi:collectWifi()};
- // ticker slice (only if compiled in)
- if($('ticker')){
-  var t={colorInverted:gv('colorInverted')==='true',changeOnRange:gv('changeOnRange')==='true'};
-  T_TEXT.forEach(function(k){t[k]=gv(k)});
-  T_NUM.forEach(function(k){t[k]=parseInt(gv(k))||0});
-  T_BOOL.forEach(function(k){t[k]=gc(k)});
-  t.symbols=[];
-  document.querySelectorAll('#symTable tr').forEach(function(tr){
-   var s=tr.querySelector('.s').value.trim();
-   if(s)t.symbols.push({symbol:s,name:tr.querySelector('.n').value.trim(),source:tr.querySelector('.src').value,
-    qty:parseFloat(tr.querySelector('.q').value)||0,cost:parseFloat(tr.querySelector('.c').value)||0});
-  });
-  o.ticker=t;
- }
- // usage slice
- if($('usage')) o.usage={usageUrl:gv('usageUrl'), pollSec:parseInt(gv('usagePollSec'))||0};
  // clock slice
  if($('tz')){var _tzn=gv('tz'); var _tzp=(_tzn in TZMAP)?TZMAP[_tzn]:((C.clock&&C.clock.tz===_tzn&&C.clock.tzPosix)?C.clock.tzPosix:'UTC0');
   o.clock={tz:_tzn,tzPosix:_tzp,
   nightEnabled:gc('nightEnabled'),nightStart:gv('nightStart')||'22:00',
   nightEnd:gv('nightEnd')||'07:00',nightLevel:parseInt(gv('nightLevel'))||0};}
- // radar slice
- if($('radar')){
-  var r={lat:parseFloat(gv('radarLat'))||0, lon:parseFloat(gv('radarLon'))||0,
-   rangeKm:parseInt(gv('rangeKm'))||20, unitsMi:gv('unitsMi')==='true',
-   pollSec:parseInt(gv('radarPollSec'))||0, source:gv('radarSource'),
-   webhookUrl:gv('radarWebhookUrl'),
-   showLabels:gc('showLabels'), showVectors:gc('showVectors'), showRimDots:gc('showRimDots'),
-   uiScale:parseInt(gv('radarUiScale'))||0, minAltFt:parseInt(gv('radarMinAlt'))||0};
-  r.airports=[];
-  document.querySelectorAll('#apTable tr').forEach(function(tr){
-   var ic=tr.querySelector('.ai').value.trim();
-   if(ic)r.airports.push({icao:ic,lat:parseFloat(tr.querySelector('.ala').value)||0,lon:parseFloat(tr.querySelector('.alo').value)||0});
-  });
-  o.radar=r;
- }
  return o;
 }
 function saveAll(){j('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(collect())})
@@ -517,30 +302,6 @@ function scanPick(ssid){var rows=document.querySelectorAll('#wifiTable tr');var 
  if(!tr){if(rows.length>=4){toast('Max 4');return}addWifiRow({});tr=$('wifiTable').lastChild}
  tr.querySelector('.ws').value=ssid;tr.querySelector('.wp').focus();}
 
-// symbols
-function renderSyms(arr){var t=$('symTable');if(!t)return;t.innerHTML='';arr.forEach(addRow);if(!arr.length)addRow({})}
-function addRow(o){var t=$('symTable');var tr=document.createElement('tr');tr.className='symrow';
- tr.innerHTML='<td style="width:24%"><input class="s" type="text" placeholder="AAPL" value="'+esc(o.symbol||'')+'"></td>'+
-  '<td><input class="n" type="text" placeholder="name" value="'+esc(o.name||'')+'"></td>'+
-  '<td style="width:118px"><select class="src" onchange="symHintFor(this.value)">'+
-   '<option value="yahoo">Yahoo Finance</option><option value="cash">cash.ch</option><option value="github">GitHub</option><option value="webhook">Webhook</option></select></td>'+
-  '<td style="width:58px"><input class="q" type="number" step="any" min="0" placeholder="qty" value="'+(o.qty>0?o.qty:'')+'"></td>'+
-  '<td style="width:70px"><input class="c" type="number" step="any" min="0" placeholder="cost" value="'+(o.cost>0?o.cost:'')+'"></td>'+
-  '<td style="width:34px"><button class="btn sec" style="padding:6px 10px" onclick="this.closest(\'tr\').remove()">&times;</button></td>';
- tr.querySelector('.src').value=o.source||'yahoo';
- t.appendChild(tr);}
-function addSym(){if(document.querySelectorAll('#symTable tr').length>=8){toast('Max 8');return}addRow({})}
-
-// airports
-function renderAps(arr){var t=$('apTable');if(!t)return;t.innerHTML='';arr.forEach(addApRow);if(!arr.length)addApRow({})}
-function addApRow(o){var t=$('apTable');var tr=document.createElement('tr');tr.className='symrow';
- tr.innerHTML='<td style="width:30%"><input class="ai" type="text" placeholder="LSZH" value="'+(o.icao||'')+'"></td>'+
-  '<td><input class="ala" type="number" step="0.0001" placeholder="lat" value="'+(o.lat!=null?o.lat:'')+'"></td>'+
-  '<td><input class="alo" type="number" step="0.0001" placeholder="lon" value="'+(o.lon!=null?o.lon:'')+'"></td>'+
-  '<td style="width:34px"><button class="btn sec" style="padding:6px 10px" onclick="this.closest(\'tr\').remove()">&times;</button></td>';
- t.appendChild(tr);}
-function addAp(){if(document.querySelectorAll('#apTable tr').length>=6){toast('Max 6');return}addApRow({})}
-
 // wifi scan
 function scan(){$('scanList').innerHTML='<div class="muted">Scanning...</div>';
  j('/api/scan').then(function(l){var h='';l.sort(function(a,b){return b.rssi-a.rssi});
@@ -565,17 +326,10 @@ function loadStatus(){j('/api/status').then(function(s){
   kv('Network',s.ssid||'-')+kv('IP',s.ip||'-')+kv('mDNS','http://'+(C.hostname||'smalltv')+'.local')+
   kv('Signal',s.rssi?s.rssi+' dBm':'-')+
   kv('Free heap',s.heap+' B')+kv('Uptime',fmtUp(s.uptime))+kv('Last reset',s.reset||'-');
- var h='';(s.tickers||[]).forEach(function(t){
-  var c=t.error?'var(--red)':(t.valid?'var(--acc)':'var(--mut)');
-  var pc=t.changePct!=null?(t.changePct>=0?'+':'')+t.changePct.toFixed(2)+'%':'';
-  h+='<div class="kv"><b style="color:'+c+'">'+t.symbol+'</b><span>'+
-   (t.valid?(t.price+'  '+pc):(t.error?'error':'...'))+'</span></div>';});
- $('tickBox').innerHTML=h||'<span class="muted">No tickers configured</span>';
 })}
 function kv(k,v){return '<div class="kv"><span class="muted">'+k+'</span><b>'+v+'</b></div>'}
 function fmtUp(s){var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);
  return (d?d+'d ':'')+(h?h+'h ':'')+m+'m'}
-function refreshNow(){j('/api/refresh',{method:'POST'}).then(function(){toast('Refreshing...');setTimeout(loadStatus,1500)})}
 
 // GitHub self-update
 function checkUpdate(){$('ghMsg').textContent='Checking GitHub...';$('chkBtn').disabled=true;

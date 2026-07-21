@@ -1,10 +1,8 @@
-// smalltv-mod — custom firmware for the GeekMagic SmallTV (ESP-12F / ESP8266)
+// swc-digital — custom firmware for the GeekMagic SmallTV (ESP-12F / ESP8266)
 //
-// Three features, each a self-contained DisplayMode (see Mode.h), picked in the
+// Each feature is a self-contained DisplayMode (see Mode.h), picked in the
 // web UI and dispatched from the registry below:
-//   - Ticker (features/ticker):  stock/crypto price, % change, sparkline.
-//   - Usage  (features/usage):   Claude 5h/7d usage bars + animated mascot.
-//   - Radar  (features/radar):   live ADS-B plane radar (compiled in when WITH_RADAR).
+//   - Usage  (features/usage):   Claude/usage display (rewritten in Plan 2).
 // Shared plumbing (WiFi, web UI, OTA, display core, settings) lives at src root.
 //
 // License: WTFPL
@@ -19,28 +17,16 @@
 #include "Mode.h"
 #include "Clock.h"
 
-#if WITH_TICKER
-#include "TickerMode.h"
-#endif
 #if WITH_USAGE
 #include "UsageMode.h"
-#endif
-#if WITH_RADAR
-#include "RadarMode.h"
 #endif
 
 // ---- mode registry --------------------------------------------------------
 // The compiled-in features, in display order. main.cpp holds no per-feature
 // state of its own — each mode owns its fetch/render/dirty tracking.
 static DisplayMode* kModes[] = {
-#if WITH_TICKER
-  &g_tickerMode,
-#endif
 #if WITH_USAGE
   &g_usageMode,
-#endif
-#if WITH_RADAR
-  &g_radarMode,
 #endif
 };
 static const size_t kModeCount = sizeof(kModes) / sizeof(kModes[0]);
@@ -53,9 +39,7 @@ static uint32_t g_carSwitch = 0;
 
 static bool carouselHas(const Settings& s, const DisplayMode* m) {
   switch (m->modeConst()) {
-    case MODE_STOCKS: return s.carouselTicker;
     case MODE_USAGE:  return s.carouselUsage;
-    case MODE_RADAR:  return s.carouselRadar;
     default:          return true;
   }
 }
