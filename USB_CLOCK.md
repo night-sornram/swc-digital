@@ -21,6 +21,9 @@ The firmware image is written to `.pio/build/clock_usb/firmware.bin`.
 
 ## Configure over USB
 
+> Note (3.1+): the Wi-Fi pairing/auth model applies only to the `smalltv_ultra`
+> firmware. `clock_usb` has no Wi-Fi and no auth — USB is its only interface.
+
 Run the CLI through `uv` so its `pyserial` dependency stays isolated:
 
 ```sh

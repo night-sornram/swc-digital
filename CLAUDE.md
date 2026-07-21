@@ -21,6 +21,20 @@ This repository carries two firmware lines for the same SmallTV-ultra hardware:
 The two lines are isolated behind their PlatformIO targets; do not confuse
 them. See `docs/superpowers/plans/` for the `smalltv_ultra` spec.
 
+### v3.1.0 — secure pairing (in progress on `feature/v3.1-secure-pairing`)
+
+`smalltv_ultra` 3.1.0 locks each device to one Mac via HTTP Digest
+(RFC 2617, qop=auth, username `admin`, 16-char Crockford-Base32 pairkey).
+The pairkey lives only in macOS Keychain (`com.night.swc-digital.device-<id>`),
+never in a file. The device stores only `MD5(admin:realm:pairkey)` (H1).
+Every protected route (`/`, `/api/*`, `/update`) requires Digest; only
+`/api/identity` and captive-portal probes are open. A factory reset or OTA
+from 3.0.x boots the device into `SmallTV-Setup` AP and forces a re-pair.
+The Mac service uses `wifi_usage_service.py run` (and `pair`/`recover`
+subcommands); on 401/403 it pauses 15 min, not the 5s network retry. mDNS
+selects the device by its stable Device ID (TXT `id`); a duplicate ID fails
+closed. See AGENTS.md "Rollout (3.1.0)" for the 9-step home procedure.
+
 ### USB clock modes (`clock_usb`)
 
 The USB clock has six modes; the Face mode is flashed, USB-verified, and

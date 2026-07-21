@@ -2,10 +2,12 @@
 #include "Platform.h"
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <MD5Builder.h>
 #include "webui.h"
 #include "Net.h"
 #include "Gfx.h"
 #include "OtaUpdate.h"
+#include "Security.h"
 #include "UsageApi.h"
 #include "features/usage/UsageStore.h"
 #include "Clock.h"
@@ -35,11 +37,13 @@ static void sendJson(JsonDocument& doc, int code = 200) {
 }
 
 static void handleRoot() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   server.sendHeader("Cache-Control", "no-cache");
   server.send_P(200, "text/html", WEBUI_HTML);
 }
 
 static void handleGetConfig() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   JsonDocument doc;
   JsonObject root = doc.to<JsonObject>();
   settingsToJson(*S, root, /*includeSecrets=*/false);
@@ -51,7 +55,69 @@ static void handleGetConfig() {
   sendJson(doc);
 }
 
+// Public: device identity only. No credentials, no settings, no usage data.
+// This is the route the Mac pairing flow probes to confirm "yes this is the
+// device I think it is, with Device ID X".
+static void handleIdentity() {
+  String out;
+  g_security.serializeIdentity(out);
+  server.send(200, "application/json", out);
+}
+
+// MD5("admin:<realm>:<pairkey>") lowercase hex. Uses MD5Builder from the
+// ESP8266 core. Pure function so a future test can mirror it in Python.
+static String computeH1(const String& pairkey) {
+  MD5Builder md5;
+  md5.begin();
+  String s = String(SECURITY_USER) + ":" + SECURITY_REALM + ":" + pairkey;
+  md5.add(s);
+  md5.calculate();
+  return md5.toString();   // 32 lowercase hex
+}
+
+// AP-only, unpaired-only pairing endpoint. The owner reads the AP password
+// off the screen, joins the SmallTV-Setup AP, then POSTs the pair key they
+// chose (or that the Mac `pair` command generated for them).
+static void handlePair() {
+  // Hard guard: AP mode + unpaired. In STA mode this route is unreachable
+  // (it is registered but always 404s below). Re-check anyway in case of
+  // captive-portal weirdness.
+  if (netMode() != NET_AP) { server.send(404, "text/plain", "Not found"); return; }
+  if (g_security.paired() || g_security.hasH1()) {
+    server.send(409, "application/json", "{\"ok\":false,\"error\":\"already paired\"}");
+    return;
+  }
+  if (!server.hasArg("plain")) { server.send(400, "application/json", "{\"ok\":false,\"error\":\"no body\"}"); return; }
+
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain"))) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"bad json\"}");
+    return;
+  }
+  // Pair key: 16-char Crockford Base32 (the Mac `pair` command's format).
+  // We accept any non-empty printable string >=12 chars so a human-typed
+  // passphrase also works.
+  const char* key = doc["pairkey"] | "";
+  size_t len = strnlen(key, 256);
+  if (len < 12 || len > 128) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"pairkey must be 12..128 chars\"}");
+    return;
+  }
+  String h1 = computeH1(String(key));
+  if (!g_security.pair(h1)) {
+    server.send(409, "application/json", "{\"ok\":false,\"error\":\"pair failed\"}");
+    return;
+  }
+  // Persist into Settings so it survives reboot.
+  S->pairedH1 = h1;
+  saveSettings(*S);
+  server.send(200, "application/json", "{\"ok\":true}");
+  // Do NOT reboot: the device stays in AP mode and serves the WebUI with
+  // Digest now on, so the same browser session can finish configuration.
+}
+
 static void handleStatus() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   JsonDocument doc;
   JsonObject o = doc.to<JsonObject>();
   o["fw"] = FW_NAME;
@@ -107,6 +173,7 @@ static String netFingerprint(const Settings& s) {
 }
 
 static void handlePostConfig() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   if (!server.hasArg("plain")) { server.send(400, "text/plain", "no body"); return; }
 
   JsonDocument doc;
@@ -138,6 +205,7 @@ static void handlePostConfig() {
 }
 
 static void handleScan() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   int n = WiFi.scanNetworks();
   JsonDocument doc;
   JsonArray arr = doc.to<JsonArray>();
@@ -152,11 +220,13 @@ static void handleScan() {
 }
 
 static void handleReboot() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   server.send(200, "application/json", "{\"ok\":true}");
   scheduleReboot(400);
 }
 
 static void handleFactory() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   factoryReset(*S);
   saveSettings(*S);
   server.send(200, "application/json", "{\"ok\":true}");
@@ -166,6 +236,7 @@ static void handleFactory() {
 // Full settings backup: stream the persisted config.json verbatim. It includes
 // the WiFi passwords — same trust domain as typing them into this page.
 static void handleExport() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   File f = LittleFS.open("/config.json", "r");
   if (!f) { server.send(404, "text/plain", "no config saved yet"); return; }
   server.sendHeader("Content-Disposition", "attachment; filename=smalltv-config.json");
@@ -175,6 +246,7 @@ static void handleExport() {
 
 // Restore a backup: apply everything, persist, reboot (WiFi/hostname may change).
 static void handleImport() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   if (!server.hasArg("plain")) { server.send(400, "text/plain", "no body"); return; }
   JsonDocument doc;
   if (deserializeJson(doc, server.arg("plain"))) {
@@ -189,6 +261,7 @@ static void handleImport() {
 
 // Check the newest GitHub release against the running version.
 static void handleCheckUpdate() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   OtaLatest r = otaCheckLatest(*S);
   JsonDocument doc;
   JsonObject o = doc.to<JsonObject>();
@@ -203,6 +276,7 @@ static void handleCheckUpdate() {
 // Trigger the self-update. The actual (blocking) download runs from the loop so
 // this response returns first; on success the device reboots into the new image.
 static void handleSelfUpdate() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   g_selfUpdate = true;
   g_updateMsg = "starting...";
   server.send(200, "application/json", "{\"ok\":true}");
@@ -210,6 +284,7 @@ static void handleSelfUpdate() {
 
 // ---- OTA ------------------------------------------------------------------
 static void handleUpdateDone() {
+  if (!g_security.authorize(server, netMode() == NET_AP)) return;
   bool ok = !Update.hasError();
   server.sendHeader("Connection", "close");
   server.send(ok ? 200 : 500, "text/plain", ok ? "OK" : platformUpdateError().c_str());
@@ -219,6 +294,13 @@ static void handleUpdateDone() {
 static void handleUpdateUpload() {
   HTTPUpload& up = server.upload();
   if (up.status == UPLOAD_FILE_START) {
+    // Auth-check BEFORE any flash write. If the request was not authorised,
+    // the handler `handleUpdateDone` never runs (it only runs at the end of a
+    // successful POST), so we must refuse here to avoid even a partial flash.
+    if (!g_security.authorize(server, netMode() == NET_AP)) {
+      Update.end();
+      return;
+    }
 #if defined(SMALLTV_ESP8266)
     WiFiUDP::stopAll();   // free UDP sockets so the OTA has max contiguous flash/heap
 #endif
@@ -253,7 +335,10 @@ void webPortalBegin(Settings& settings) {
   // (success reboots into the new image before we ever get here).
   g_updateMsg = otaTakeBootResult();
 
-  server.on("/", HTTP_GET, handleRoot);
+  // ---- public routes (no auth, ever) -------------------------------------
+  server.on("/api/identity", HTTP_GET, handleIdentity);
+  server.on("/api/pair", HTTP_POST, handlePair);   // AP-only, unpaired-only
+  server.on("/",             HTTP_GET, handleRoot);
   server.on("/api/config", HTTP_GET, handleGetConfig);
   server.on("/api/config", HTTP_POST, handlePostConfig);
   server.on("/api/status", HTTP_GET, handleStatus);

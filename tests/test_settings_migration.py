@@ -25,6 +25,13 @@ def migrate_v2_to_v3(old: dict) -> dict:
     out["usage"]["autoRotateSec"] = max(5, min(3600, int(cs)))
     return out
 
+def migrate_v3_to_v4(old: dict) -> dict:
+    """Mirror of Settings.cpp v3->v4 migration: forced re-pair, pairedH1 wiped."""
+    out = migrate_v2_to_v3(old)
+    out["schemaVersion"] = 4
+    out.pop("pairedH1", None)
+    return out
+
 class MigrationTests(unittest.TestCase):
     def test_lifts_wifi_display_clock(self):
         old = {
@@ -64,6 +71,20 @@ class MigrationTests(unittest.TestCase):
     def test_clamps_autorotate(self):
         self.assertEqual(migrate_v2_to_v3({"carouselSec": 1})["usage"]["autoRotateSec"], 5)
         self.assertEqual(migrate_v2_to_v3({"carouselSec": 99999})["usage"]["autoRotateSec"], 3600)
+
+class V3ToV4MigrationTests(unittest.TestCase):
+    def test_forced_repair(self):
+        old = {"schemaVersion": 3, "hostname": "x", "brightness": 70,
+               "pairedH1": "deadbeef" * 4}
+        new = migrate_v3_to_v4(old)
+        self.assertEqual(new["schemaVersion"], 4)
+        self.assertNotIn("pairedH1", new)
+        self.assertEqual(new["hostname"], "x")
+        self.assertEqual(new["brightness"], 70)
+
+    def test_fresh_chip_has_no_pairedH1(self):
+        new = migrate_v3_to_v4({"schemaVersion": 3})
+        self.assertNotIn("pairedH1", new)
 
 if __name__ == "__main__":
     unittest.main()

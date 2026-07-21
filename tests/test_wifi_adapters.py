@@ -184,18 +184,24 @@ def _make_fake_urlopen(payload):
 class DiscoveryFallbackTests(unittest.TestCase):
     def test_explicit_only_when_no_zeroconf(self):
         # Force discover() to return [] (zeroconf not installed in test env).
+        # v3.1: all_targets returns (url, id) tuples; explicit URLs carry id="".
         import aiusage_mdns
         with mock.patch.object(aiusage_mdns, "discover", return_value=[]):
-            urls = aiusage_mdns.all_targets(["http://1.2.3.4/api/usage"], mdns_timeout=0)
-        self.assertEqual(urls, ["http://1.2.3.4/api/usage"])
+            targets = aiusage_mdns.all_targets(["http://1.2.3.4/api/usage"], mdns_timeout=0)
+        self.assertEqual(targets, [("http://1.2.3.4/api/usage", "")])
 
     def test_dedup_explicit_then_mdns(self):
         import aiusage_mdns
         with mock.patch.object(aiusage_mdns, "discover",
-                               return_value=["http://5.6.7.8/api/usage",
-                                             "http://1.2.3.4/api/usage"]):   # dup of explicit
-            urls = aiusage_mdns.all_targets(["http://1.2.3.4/api/usage"], mdns_timeout=0)
-        self.assertEqual(urls, ["http://1.2.3.4/api/usage", "http://5.6.7.8/api/usage"])
+                               return_value=[("http://5.6.7.8/api/usage", "deadbeef"),
+                                             ("http://1.2.3.4/api/usage", "c089a3f2")]):   # dup of explicit URL
+            targets = aiusage_mdns.all_targets(["http://1.2.3.4/api/usage"], mdns_timeout=0)
+        # v3.1: dedup by URL only; explicit URL keeps id="" (caller probes).
+        # The mDNS hit at 5.6.7.8 has a different URL + id from the explicit one
+        # so it is appended with its advertised id. The 1.2.3.4 mDNS dup is
+        # dropped (URL already in out).
+        self.assertEqual(targets, [("http://1.2.3.4/api/usage", ""),
+                                   ("http://5.6.7.8/api/usage", "deadbeef")])
 
 
 class ServiceCliTests(unittest.TestCase):
@@ -207,10 +213,11 @@ class ServiceCliTests(unittest.TestCase):
         }}
         with mock.patch.object(wifi_usage_service, "_load_config", return_value=cfg), \
              mock.patch.object(wifi_usage_service.aiusage_mdns, "all_targets",
-                               return_value=["http://1.2.3.4/api/usage"]), \
-             mock.patch.object(wifi_usage_service, "_step_provider", return_value=60) as step, \
+                               return_value=[("http://1.2.3.4/api/usage", "c089a3f2")]), \
+             mock.patch.object(wifi_usage_service, "_step_provider") as step, \
              mock.patch.object(wifi_usage_service.time, "sleep") as sleep:
-            status = wifi_usage_service.main(["--once"])
+            # v3.1: --once moved under the `run` subcommand.
+            status = wifi_usage_service.main(["run", "--once"])
         self.assertEqual(status, 0)
         self.assertEqual(step.call_count, 2)
         sleep.assert_not_called()

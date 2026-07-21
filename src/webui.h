@@ -68,6 +68,12 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
  <button data-t="update">Update</button>
 </nav>
 <main>
+ <!-- Unpaired banner (3.1+): shows pair instructions when /api/identity reports paired=false. -->
+ <div id="pairHint" style="display:none;background:#1a2a36;padding:10px;border-radius:6px;margin-bottom:12px">
+  <b>This device is unpaired.</b> Join its setup Wi-Fi (password shown on the device screen),
+  open <code id="pairUrl"></code>, and run <code>wifi_usage_service.py pair --url &lt;url&gt;</code> on your Mac.
+  Once paired, the browser will prompt for username <code>admin</code> and your pairkey.
+ </div>
  <!-- STATUS -->
  <section id="status" class="tab active">
   <div class="card"><h2>Device</h2><div id="statusBox" class="muted">Loading...</div></div>
@@ -324,6 +330,21 @@ function scan(){$('scanList').innerHTML='<div class="muted">Scanning...</div>';
    esc(n.ssid)+'"><span>'+(n.enc?'🔒 ':'')+esc(n.ssid)+'</span><span class="muted">'+n.rssi+' dBm</span></div>'});
   $('scanList').innerHTML=h||'<div class="muted">No networks found</div>';})}
 
+// identity (3.1+): reads the PUBLIC /api/identity to drive the unpaired hint.
+// Do NOT use /api/status here — that route is Digest-gated once paired, so the
+// hint could never be cleared by re-fetching status. /api/identity is always open.
+function loadIdentity(){
+ return j('/api/identity').then(function(i){
+  var ph = $('pairHint'); if (!ph) return;
+  ph.style.display = i.paired ? 'none' : 'block';
+  if (!i.paired) {
+   // Identity does NOT carry ssid/ip (those are in /api/status, which is
+   // Digest-gated). The hint tells the user where to look instead.
+   if ($('pairUrl')) $('pairUrl').textContent = 'http://' + location.host + '/';
+  }
+ }).catch(function(){});
+}
+
 // status
 function loadStatus(){j('/api/status').then(function(s){
  $('dot').className='dot'+(s.connected?' ok':'');
@@ -427,6 +448,7 @@ function upload(){var f=$('fw').files[0];if(!f){toast('Pick a .bin first');retur
  x.send(fd);
 }
 
+loadIdentity();
 loadConfig().then(loadStatus).then(loadUsageOverview);
 setInterval(loadStatus,5000);
 // Refresh button (Usage tab): read-only — never fire a provider API from the UI.

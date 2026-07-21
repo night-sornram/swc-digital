@@ -10,6 +10,33 @@
 - `clock_usb` (the USB-only reference firmware) has no Wi-Fi code at all.
   Never add any.
 
+## Wi-Fi portal auth (3.1+)
+
+The `smalltv_ultra` Wi-Fi portal uses HTTP Digest auth (RFC 2617 qop=auth)
+with username `admin` and a 16-char Crockford-Base32 pairkey the owner
+generates during pairing. The device stores only `MD5(admin:realm:pairkey)`
+(the H1), never the plaintext pairkey.
+
+What this stops:
+- A friend/roommate on the same Wi-Fi controlling the device or pushing
+  fake usage values.
+- The pairkey crossing the wire on every request (Digest sends an H1 of
+  the request + a nonce, not the secret).
+
+What this does NOT stop:
+- A passive network sniffer CAN still read the (unencrypted) usage
+  percentages and config GET responses. The threat model is casual
+  same-network abuse, not a targeted attacker. Do not enable remote
+  forwarding of port 80.
+- A Wi-Fi administrator can ARP-spoof and MITM the device.
+
+The pairkey lives in macOS Keychain under
+`com.night.swc-digital.device-<id>`, account `pairkey`. Never write it to a
+file, never paste it into a chat or issue.
+
+`clock_usb` (the USB-only firmware) has no Wi-Fi code at all and is
+unaffected.
+
 ## Secrets handling (unchanged)
 
 - `tools/wifi-usage.toml`, `tools/usage-collector.toml`,

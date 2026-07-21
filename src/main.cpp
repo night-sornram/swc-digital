@@ -10,6 +10,7 @@
 #include "Platform.h"
 #include "config.h"
 #include "Settings.h"
+#include "Security.h"
 #include "Net.h"
 #include "Gfx.h"
 #include "WebPortal.h"
@@ -128,6 +129,14 @@ void setup() {
   Serial.println("[boot] settings");
   settingsBegin();
   loadSettings(g_settings);
+
+  Serial.println("[boot] security");
+  g_security.begin();
+
+  // Restore the last-pushed usage snapshot from LittleFS so the screen shows
+  // the previous reading immediately after a reboot instead of waiting ~60 s
+  // for the Mac service's next poll.
+  g_usageStore.begin();
 
   Serial.println("[boot] display");
   gfxBegin(g_settings);
