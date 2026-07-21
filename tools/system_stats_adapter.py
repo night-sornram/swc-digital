@@ -29,7 +29,12 @@ def fetch() -> dict:
         raise SystemStatsError("psutil not installed") from exc
 
     try:
-        cpu = int(round(psutil.cpu_percent(interval=0.5)))
+        # CPU: sample over 1.5s for a stable reading (0.5s often returns 0%
+        # on an idle Mac). The brief block is fine — the service polls
+        # every 60s.
+        cpu = int(round(psutil.cpu_percent(interval=1.5)))
+        # RAM: psutil.virtual_memory().percent ≈ Activity Monitor (uses
+        # active+wired+compressed, not inactive). Matches within ~2%.
         ram = int(round(psutil.virtual_memory().percent))
         # macOS splits the SSD into a read-only system volume (/) and a data
         # volume (/System/Volumes/Data) since Catalina. psutil.disk_usage('/')
