@@ -248,11 +248,12 @@ void UsageMode::setActiveProvider(UsageProvider p) {
 }
 
 void UsageMode::toggleAutoProvider() {
-  // Rotate CODEX → ZAI → SYSTEM → CODEX.
+  // Rotate CODEX → ZAI → VITALS → CODEX. (SYSTEM removed from rotation in
+  // 3.3.1 — VITALS is its superset with battery/uptime/temp added.)
   switch (active_) {
     case PROVIDER_CODEX:  active_ = PROVIDER_ZAI;    break;
-    case PROVIDER_ZAI:    active_ = PROVIDER_SYSTEM; break;
-    case PROVIDER_SYSTEM:
+    case PROVIDER_ZAI:    active_ = PROVIDER_VITALS; break;
+    case PROVIDER_VITALS:
     default:              active_ = PROVIDER_CODEX;  break;
   }
   needsFullRedraw_ = true;

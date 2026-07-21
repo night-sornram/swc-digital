@@ -116,7 +116,6 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
    <select id="usage-mode">
     <option value="codex">Codex</option>
     <option value="zai">Z.ai</option>
-    <option value="system">System (CPU/RAM/Storage)</option>
     <option value="auto">Auto (rotate)</option>
     <option value="vitals">Vitals (Mac)</option>
     <option value="weather">Weather + Clock</option>
@@ -126,7 +125,7 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
    <div class="row" style="margin-top:8px">
     <div><label>Codex (s)</label><input id="usage-codex-sec" type="number" min="0" max="3600" step="1"></div>
     <div><label>Z.ai (s)</label><input id="usage-zai-sec" type="number" min="0" max="3600" step="1"></div>
-    <div><label>System (s)</label><input id="usage-system-sec" type="number" min="0" max="3600" step="1"></div>
+    <div><label>Vitals (s)</label><input id="usage-system-sec" type="number" min="0" max="3600" step="1"></div>
    </div>
    <small class="hint">0 = use default. Example: Codex 3, Z.ai 3, System 5.</small>
   </div>

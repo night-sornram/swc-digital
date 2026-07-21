@@ -254,7 +254,7 @@ void loop() {
     switch (g_usageMode.activeProvider()) {
       case PROVIDER_CODEX:  dwell = g_settings.usage.codexSec  ?: dwell; break;
       case PROVIDER_ZAI:    dwell = g_settings.usage.zaiSec    ?: dwell; break;
-      case PROVIDER_SYSTEM: dwell = g_settings.usage.systemSec ?: dwell; break;
+      case PROVIDER_VITALS: dwell = g_settings.usage.systemSec ?: dwell; break;
     }
     if (millis() - g_autoSwitch >= (uint32_t)dwell * 1000UL) {
       g_autoSwitch = millis();
