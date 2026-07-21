@@ -9,8 +9,10 @@
 // ---------------------------------------------------------------------------
 // Firmware identity
 // ---------------------------------------------------------------------------
+// FW_VERSION is NOT defined here. tools/gen_version.py (a PlatformIO pre-build
+// script) derives it from `git describe --tags` at build time and injects it
+// as -DFW_VERSION='"x.y.z"'. To release: `git tag v3.0.3 && pio run`.
 #define FW_NAME      "swc-digital"
-#define FW_VERSION   "3.0.1"
 #define REPO_OWNER   "night-sornram"
 #define REPO_NAME    "swc-digital"
 #define UPDATE_ASSET "swc-digital-smalltv-ultra.bin"
