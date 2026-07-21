@@ -1,0 +1,65 @@
+# SWC Digital — release workflow.
+# Triggered by a v* tag (e.g. v3.0.0). Builds the SmallTV-ultra production
+# firmware and the recovery loader, names them per spec, computes SHA-256
+# sidecars, and attaches all four artifacts to the GitHub Release.
+#
+# No ESP32 artifacts are produced: 3.0.0 dropped ESP32-C2 and NM-TV-154 support.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # required by softprops/action-gh-release to upload assets
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO + esptool via uvx
+        run: |
+          python -m pip install --upgrade pip
+          pip install uv
+
+      - name: Build smalltv_ultra (production)
+        run: uvx --from platformio platformio run -e smalltv_ultra
+
+      - name: Build smalltv_ultra_loader (recovery)
+        run: uvx --from platformio platformio run -e smalltv_ultra_loader
+
+      - name: Verify images (image-info + checksum)
+        run: |
+          uvx --from esptool esptool image-info .pio/build/smalltv_ultra/firmware.bin
+          uvx --from esptool esptool image-info .pio/build/smalltv_ultra_loader/firmware.bin
+
+      - name: Stage artifacts with spec names
+        run: |
+          mkdir -p artifacts
+          cp .pio/build/smalltv_ultra/firmware.bin        artifacts/swc-digital-smalltv-ultra.bin
+          cp .pio/build/smalltv_ultra_loader/firmware.bin artifacts/swc-digital-smalltv-ultra-loader.bin
+
+      - name: Generate SHA-256 sidecars
+        working-directory: artifacts
+        run: |
+          sha256sum swc-digital-smalltv-ultra.bin        > swc-digital-smalltv-ultra.bin.sha256
+          sha256sum swc-digital-smalltv-ultra-loader.bin > swc-digital-smalltv-ultra-loader.bin.sha256
+
+      - name: Attach artifacts to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/swc-digital-smalltv-ultra.bin
+            artifacts/swc-digital-smalltv-ultra.bin.sha256
+            artifacts/swc-digital-smalltv-ultra-loader.bin
+            artifacts/swc-digital-smalltv-ultra-loader.bin.sha256
+          generate_release_notes: true
+          fail_on_unmatched_files: true

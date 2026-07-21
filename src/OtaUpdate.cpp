@@ -4,18 +4,12 @@
 #include <LittleFS.h>
 #include "config.h"
 
-#if defined(SMALLTV_ESP32C2) || defined(SMALLTV_ESP32)
-#include <HTTPUpdate.h>
-#endif
-
-#if defined(SMALLTV_ESP8266)
 // Prefer MFLN so BearSSL can run with a tiny buffer; fall back to 4 KB.
 static uint16_t probeMfln(const char* host) {
   if (BearSSL::WiFiClientSecure::probeMaxFragmentLength(host, 443, 512))  return 512;
   if (BearSSL::WiFiClientSecure::probeMaxFragmentLength(host, 443, 1024)) return 1024;
   return 4096;
 }
-#endif
 
 // "a.b.c" -> a*10000 + b*100 + c, for a simple newer-than comparison.
 static long verNum(const char* v) {
@@ -48,14 +42,12 @@ OtaLatest otaCheckLatest(const Settings& s) {
 
     SecureClient client;
     client.setInsecure();
-#if defined(SMALLTV_ESP8266)
     client.setBufferSizes(probeMfln(GH_API_HOST), 512);
-#endif
 
     HTTPClient http;
     // A stalled stream truncates into a "parse failed"; the retries below clear
-    // that, so keep the per-attempt timeout modest to stay responsive (this runs
-    // in the ESP32 web handler) rather than blocking long on each failing try.
+    // that, so keep the per-attempt timeout modest to stay responsive rather
+    // than blocking long on each failing try.
     http.setTimeout(s.httpTimeout);
     http.setReuse(false);
     http.setUserAgent(F(FW_NAME));                 // GitHub rejects requests with no UA
@@ -117,48 +109,12 @@ OtaLatest otaCheckLatest(const Settings& s) {
   return r;   // r.error holds the last (retryable) error after all attempts
 }
 
-String otaUpdateFromGitHub(const Settings& s) {
-#if defined(SMALLTV_ESP32C2) || defined(SMALLTV_ESP32)
-  OtaLatest r = otaCheckLatest(s);
-  if (!r.ok) return "check failed: " + r.error;
-  if (!r.newer) return "already up to date (" FW_VERSION ")";
-  if (ESP.getFreeHeap() < 22000) return F("not enough free heap for a TLS update");
-
-  // mbedTLS manages its own buffers; each target pulls its own release asset
-  // (UPDATE_ASSET in config.h). The two-slot OTA layout makes this atomic, so a
-  // failed/interrupted download just leaves the running image untouched — retry
-  // once on a transient stream stall before giving up.
-  String lastErr;
-  for (int attempt = 1; attempt <= 2; attempt++) {
-    SecureClient client;
-    client.setInsecure();
-
-    HTTPUpdate up;
-    up.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
-    up.rebootOnUpdate(true);
-
-    t_httpUpdate_return ret = up.update(client, r.url);
-    switch (ret) {
-      case HTTP_UPDATE_OK:         return "";                     // reboots into the new image
-      case HTTP_UPDATE_NO_UPDATES: return F("server reported no update");
-      case HTTP_UPDATE_FAILED:     lastErr = up.getLastErrorString(); break;
-    }
-    if (attempt < 2) delay(1000);
-  }
-  return "download failed after retry: " + lastErr;
-#else
-  (void)s;
-  return F("internal error: the ESP8266 updates at boot");   // WebPortal never calls this here
-#endif
-}
-
 // ---- update-at-boot (ESP8266) ----------------------------------------------
 // The asset download needs a full 16 KB BearSSL receive buffer (github.com and
 // release-assets.githubusercontent.com offer no MFLN), which does not fit next
 // to the running features. The web UI queues the request in LittleFS and
 // reboots; this runs early in setup() with the heap still free. The request is
 // consumed BEFORE the attempt, so a crash or failure can never boot-loop.
-#if defined(SMALLTV_ESP8266)
 static const char* OTA_REQ_PATH = "/ota.req";
 static const char* OTA_MSG_PATH = "/ota.msg";
 
@@ -223,9 +179,3 @@ void otaBootUpdate(const Settings& s) {
     otaBootResult("download failed: " + ESPhttpUpdate.getLastErrorString());
   // HTTP_UPDATE_OK: rebootOnUpdate restarts into the new image
 }
-#else
-bool   otaBootRequested() { return false; }
-bool   otaRequestBootUpdate(const char*) { return false; }
-void   otaBootUpdate(const Settings&) {}
-String otaTakeBootResult() { return String(); }
-#endif

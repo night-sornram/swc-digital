@@ -1,270 +1,80 @@
-<p align="center">
-  <img src="docs/src/assets/logo.svg" alt="smalltv-mod" width="96" />
-</p>
+# SWC Digital
 
-<h1 align="center">smalltv-mod</h1>
+Custom firmware for the GeekMagic SmallTV-ultra (ESP-12F / ESP8266, 1.54" 240×240 ST7789).
 
-<p align="center">
-  <a href="https://github.com/giovi321/smalltv-mod/actions/workflows/build.yml"><img src="https://github.com/giovi321/smalltv-mod/actions/workflows/build.yml/badge.svg" alt="Build"></a>
-  <a href="https://github.com/giovi321/smalltv-mod/actions/workflows/docs.yml"><img src="https://github.com/giovi321/smalltv-mod/actions/workflows/docs.yml/badge.svg" alt="Docs"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-WTFPL-blue.svg" alt="License: WTFPL"></a>
-  <img src="https://img.shields.io/badge/platform-ESP8266%20%7C%20ESP32--C2%20%7C%20ESP32-informational" alt="ESP8266, ESP32-C2, and ESP32">
-</p>
+Two firmware targets, both for the same hardware:
 
-<p align="center">
-  <a href="https://giovi321.github.io/smalltv-mod/"><img src="https://img.shields.io/badge/Read_the_docs-2563eb?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Read the documentation"></a>
-</p>
+- **`smalltv_ultra`** — Wi-Fi firmware that displays live Codex and z.ai usage.
+  Three screen modes: `CODEX`, `Z.AI`, and `AUTO` (alternates every 30 s).
+  A Mac service pushes usage data over the LAN every 60 s.
+- **`clock_usb`** — USB-only recovery / reference firmware. No Wi-Fi, no cloud,
+  configured entirely over the onboard CH340 serial bridge. See `USB_CLOCK.md`.
 
-> Not affiliated with GeekMagic or Anthropic. This firmware replaces the stock firmware entirely.
+The recovery loader (`smalltv_ultra_loader`) is a tiny Wi-Fi + web-OTA image used
+to slip a full firmware past a stock updater that rejects the full image for
+lack of space.
 
-## PHUD USB Smart Weather Clock
+## Hardware
 
-This checkout also contains a custom `clock_usb` target for the physical
-ESP8266 Smart Weather Clock connected through its CH340 USB bridge. This target
-is intentionally separate from the upstream `smalltv` firmware described below:
-it uses no Wi-Fi, stores no Wi-Fi password, and depends on no cloud service.
+- MCU: ESP8266EX, 26 MHz crystal, 4 MB flash (DIO, 40 MHz).
+- USB bridge: CH340/CH341.
+- Display: ST7789, 240×240, SPI mode 3.
+- Pin map: see `src/board_smalltv_ultra.h` (SCLK=14, MOSI=13, DC=0, RST=2, CS=15, BL=5).
 
-The flashed USB firmware provides six selectable screens plus reminder alerts:
+Only SmallTV-ultra is supported. ESP32-C2 and NM-TV-154 support was removed in 3.0.0.
 
-- An animated cyan LED Face with automatic and manual moods.
-- A six-account Claude and Codex usage dashboard.
-- A BTC/USD price screen with 24 one-hour candlesticks and 24-hour change.
-- A large local Clock view.
-- A visually verified Noto Sans Thai test showing `สวัสดี`.
-- A seven-slot local digital Gallery and slideshow.
-- Full-screen daily reminder alerts that temporarily interrupt any selectable
-  screen.
-
-The reminder implementation is flashed and visually verified on the physical
-clock: an alert remains steady for about 60 seconds and returns to the previous
-screen without flickering or blanking.
-
-The LED Face V1 is flashed with written-data hash and USB protocol verification,
-and its eyes and animation are visually confirmed on the physical display.
-V2-A is flashed and installed as the active Mac service. One stable process owns
-the USB serial connection, CLI requests are verified through its private socket,
-firmware reports the activity-driven Auto emotion, and the physical transitions
-and animation are visually confirmed.
-
-### Control panel and LED Face
-
-Start the Mac-only browser controller:
+## Build
 
 ```sh
-uv run --with pyserial --with pillow tools/clock_gui.py
+uvx --from platformio platformio run -e smalltv_ultra         # production
+uvx --from platformio platformio run -e smalltv_ultra_loader  # recovery loader
+uvx --from platformio platformio run -e clock_usb             # USB-only reference
 ```
 
-Open `http://127.0.0.1:8765`. The **Home** tab switches between Face, Usage,
-BTC/USD, Clock, and the Thai test. **Gallery** controls local photos and the
-slideshow, **Reminders** manages eight daily alerts, and **Settings** contains
-brightness and LCD test controls. The server listens only on `127.0.0.1`; the
-clock itself remains USB-only and does not use Wi-Fi.
-
-The Face controller offers eight expressions:
-
-- **Auto with V2-A**: Focus while the Mac is active, Curious after five idle
-  minutes, Sleepy after 30 idle minutes, and Happy for 30 seconds when activity
-  resumes. If the Mac service is unavailable, firmware falls back to the V1
-  time-based schedule.
-- **Neutral, Happy, Focus, Curious, Sleepy, Alert, and Celebrate**: manual moods
-  that remain selected until changed.
-
-Face uses cyan code-rendered eyes on black. Blinking, glancing, alert pulsing,
-and celebration movement update only the eye region, avoiding full-screen redraw
-flicker. Face selection and its mood persist across normal collector-triggered
-USB resets.
-
-Terminal controls are available too:
+## Flash
 
 ```sh
-# Select Face with automatic time-based emotion.
-uv run --with pyserial tools/clockctl.py face auto
-
-# Select a manual expression.
-uv run --with pyserial tools/clockctl.py face curious
-
-# Switch to another screen.
-uv run --with pyserial tools/clockctl.py screen usage
-uv run --with pyserial tools/clockctl.py screen btc
-uv run --with pyserial tools/clockctl.py screen clock
-uv run --with pyserial tools/clockctl.py screen thai
+uvx --from esptool esptool \
+  --port "$(uv run --with pyserial tools/clockctl.py find-port)" --baud 115200 \
+  write-flash 0x0 .pio/build/smalltv_ultra/firmware.bin
 ```
 
-Opening this clock's CH340 serial port resets the ESP8266. The V2-A Mac service
-keeps one session open and exposes a user-only Unix socket; the controller, CLI,
-usage updates, and Gallery uploads all route through it instead of reopening the
-port. When the service is not running, the tools retain their direct USB fallback
-and restore cached state after that unavoidable reset. See
-[`USB_CLOCK.md`](USB_CLOCK.md) for every mood command, service installation,
-persistence details, safe flashing, and stock recovery.
+Always use 115200 baud. The CH340 auto-reset wiring resets the ESP8266 each time
+a serial session opens.
 
-### Using reminders
+## Usage display (the Wi-Fi firmware)
 
-The clock stores up to eight reminders in EEPROM. They repeat every day until
-deleted and survive USB-triggered resets. At the scheduled time, an alert covers
-the current screen for approximately 60 seconds and then returns automatically.
+The device exposes:
 
-Use the controller's **Reminders** tab to set or delete any of the eight slots.
-The controller remembers the tab you were using. Gallery replacements are first
-transferred to a temporary LittleFS file and checksum-verified, so a failed
-upload leaves the existing slot intact.
+- `POST /api/usage` — the Mac service pushes one body per provider here.
+- `GET /api/usage` — read both providers' snapshots.
+- `_aiusage._tcp` mDNS service for discovery.
+- A web UI on port 80 for mode / brightness / Wi-Fi / OTA settings.
 
-The same controls are available from Terminal:
+See `docs/superpowers/plans/` for the design and `tools/wifi-usage.toml.example`
+for the Mac service config.
 
-```sh
-# Set slot 0 to alert every day at 14:00.
-uv run --with pyserial tools/clockctl.py remind set 0 14:00 "TAKE MEDICINE"
+## Mac usage service
 
-# List all eight slots.
-uv run --with pyserial tools/clockctl.py remind list
+`tools/wifi_usage_service.py` polls Codex (`~/.codex/auth.json`) and z.ai
+(`~/.claude/settings.json`) every 60 s and pushes each provider to every
+SmallTV-ultra it discovers on the LAN. Per-provider backoff on 429/5xx. Never
+logs tokens, headers, or full responses.
 
-# Delete slot 0.
-uv run --with pyserial tools/clockctl.py remind del 0
-```
+Install as a LaunchAgent using `tools/com.night.swc-digital-wifi-usage.plist.example`.
 
-Slots range from `0` to `7`. Labels currently accept 1–20 printable ASCII
-characters. The existing Thai screen is a pre-rendered bitmap, not a general
-Thai text renderer, so arbitrary Thai reminder labels are not supported yet.
+## USB clock (`clock_usb`)
 
-The clock's wall time is RAM-only. Opening the serial port resets this board,
-so reminders cannot fire after a reset until the Mac collector restores time.
-Once synchronized, the firmware catches up an unfired reminder scheduled within
-the previous two minutes. Reminders due together are displayed sequentially.
+See `USB_CLOCK.md` for the full build / flash / restore / CLI guide. The USB
+clock is a separate firmware line and does not share the Wi-Fi usage code.
 
-Reminder commands also republish the collector's last complete cached usage
-snapshot after the unavoidable USB-open reset. This prevents the Usage screen
-from changing to `MAC OFFLINE` when a reminder is listed, set, or deleted, and
-does not make a live Claude or Codex request.
+## Recovery
 
-Build only the USB firmware target with:
-
-```sh
-uvx --from platformio platformio run -e clock_usb
-```
-
-The generated image is `.pio/build/clock_usb/firmware.bin`. See
-[`USB_CLOCK.md`](USB_CLOCK.md) for configuration, safe flashing, recovery, and
-hardware-specific validation requirements. Do not build or flash the upstream
-`smalltv` target for this clock.
-
-### Privacy for contributors
-
-The USB clock never needs Wi-Fi credentials or cloud tokens. Usage integration
-is optional: copy `tools/usage-collector.toml.example` to the Git-ignored
-`tools/usage-collector.toml`; its defaults are safe 0% demo sources. Add local
-provider commands only to that private copy. Before publishing a fork, read
-[`SECURITY.md`](SECURITY.md), especially the warning not to upload a stock-flash
-backup or collector state.
-
-The GeekMagic SmallTV is a cheap desk gadget: a little cube with a 1.54" colour screen, an ESP inside, and a USB-C port. This firmware throws away the stock apps and turns it into three things you actually watch. It shows a **stock and crypto ticker** with prices, change, and a sparkline. It flips into a **Claude usage meter** with an animated mascot and your 5-hour and 7-day usage bars. And it becomes a **live plane radar** centred on your location, pulled from a free public feed. One image carries all three; you switch between them in a built-in web UI, and you update over WiFi.
-
-This firmware builds for four boards from one codebase. The original SmallTV runs an **ESP8266**; the **SmallTV-ultra** is the same ESP-12F hardware and screen, but its stock "Ultra" firmware and flash partitions block a normal OTA of this image, so it takes a two-step loader install (see [Flashing](#flashing)); a second version sold under the same "smart weather clock" look uses an **ESP32-C2 (ESP8684)** instead. A third build targets the **NMMiner NM-TV-154** (PCB marked "NM-TV-Miner"), a classic-ESP32 BTC lottery miner in the same cube with the same screen, confirmed working by a community tester in [issue #1](https://github.com/giovi321/smalltv-mod/issues/1). Pick yours below.
-
-<p align="center">
-  <img src="docs/public/assets/screen.svg" alt="The SmallTV running its three modes: stock ticker, Claude usage, and plane radar" width="900" />
-</p>
-
-## Which one do I have
-
-Check the board before you build, because the variants flash differently.
-
-| | SmallTV (ESP8266) | SmallTV-ultra | SmallTV (ESP32-C2) | NM-TV-154 (ESP32) |
-|---|---|---|---|---|
-| Photo | <img src="docs/public/assets/product-8266.png" alt="The SmallTV (ESP8266)" width="240"> | <img src="docs/public/assets/product-ultra.png" alt="The SmallTV-ultra" width="240"> | <img src="docs/public/assets/product-c2.png" alt="The SmallTV (ESP32-C2)" width="240"> | <img src="docs/public/assets/product-esp32.png" alt="The NM-TV-154 (ESP32)" width="240"> |
-| MCU | ESP-12F (ESP8266), 4 MB flash | same ESP-12F (ESP8266), 4 MB flash | ESP32-C2 / ESP8684, 4 MB flash | ESP32-WROOM-32E, 4 MB flash |
-| Build env | `smalltv` | `smalltv` (same image, `smalltv_loader` to install) | `smalltv_c2` | `smalltv_esp32` |
-| Display | 1.54" 240×240 IPS ST7789 | same panel | same panel, RGB order | same panel |
-| Flashing | OTA from the stock web UI, or UART header | two-step [loader](#flashing) then OTA, or UART | USB-C via the onboard CH340C (esptool) | USB via esptool |
-| Tell-tale | ESP8266 module, no USB-serial chip | stock firmware branded "Ultra", OTA of this image fails with "Not Enough Space" | CH340C chip next to the USB-C port | PCB reads "NM-TV-Miner" |
-
-The screens in the photos above are each unit's **stock firmware**, not this one, and they differ by model and firmware version (the ultra ships as a weather clock, the original as a ticker, and so on). Use the on-screen look as a first clue to which model you are holding, then confirm with the tell-tale row, because the binary and the install method differ per model. If your board has a **CH340C** chip beside the USB-C port and the main chip reads **ESP8684**, you have the ESP32-C2 model. Full teardown photos and pin maps are in [Hardware and variants](https://giovi321.github.io/smalltv-mod/getting-started/hardware/).
-
-## What it does
-
-- **Stock and crypto ticker.** Price, absolute change, percent change with an up/down arrow, and a sparkline. Up to 8 symbols rotate on a timer. Data comes straight from Yahoo Finance over HTTPS with no backend, from cash.ch for Swiss instruments Yahoo doesn't carry (structured products, AMCs, tracker certificates), or from your own webhook if you want to own the source. Stocks, ETFs, Swiss equities (`NESN.SW`), crypto (`BTC-USD`), and FX (`EURUSD=X`) all work. Add a quantity and cost basis to any ticker and it shows your P/L, with a portfolio summary page in the rotation.
-- **Claude usage meter.** An animated pixel mascot plus your 5-hour and 7-day usage as big percentages with fill bars and reset countdowns. It is fed over WiFi by the [clawdmeter-daemon](https://github.com/giovi321/clawdmeter-daemon) on your PC. When the data stops, the mascot plays an idle animation until it comes back. Running several devices, the daemon discovers them over mDNS and pushes to all of them.
-- **Plane radar.** A scope centred on your location with nearby aircraft as heading triangles, speed vectors, and callsign or altitude labels, from the free [adsb.fi](https://adsb.fi) API or a LAN webhook. Marker size, an altitude filter, and label decluttering are configurable.
-- **Web UI for everything.** Join WiFi (up to 4 saved networks), pick the mode or a carousel that rotates through them, manage the symbol list, set brightness, orientation, and colours, set an NTP timezone and a nightly dimming schedule (night brightness, 0 = screen off), and back up or restore the whole configuration as a file. First boot creates a `SmallTV-Setup` hotspot with a captive portal.
-- **Updates over WiFi.** Every board pulls the newest release from GitHub itself from the web UI's Update tab, or takes a manual firmware upload from the browser. On the ESP8266 the download runs at boot (the device reboots twice). **Warning: ESP8266 devices on firmware 2.6.1 or older cannot self-update** (the updater itself was broken; it fails with "connection failed"). Update those once manually: upload `smalltv-mod-firmware.bin` from the [Releases page](https://github.com/giovi321/smalltv-mod/releases) in the Update tab. From 2.7.0 on, self-update works everywhere.
-
-## Get the firmware
-
-You do not need a toolchain. GitHub Actions builds the images for all four boards.
-
-- Every push: the **Actions** tab, latest `build` run, download the firmware artifact.
-- Tagged releases (`vX.Y.Z`): attached to the [Releases](../../releases) page.
-
-Or [build it yourself](#building-from-source).
-
-## Flashing
-
-The right method depends on your board. The steps below are the short version; the [Flashing guide](https://giovi321.github.io/smalltv-mod/getting-started/flashing/) covers recovery, backups, and troubleshooting.
-
-**SmallTV (ESP8266).** The stock firmware exposes an OTA updater, so you can install this without opening the device. Find its IP, browse to `http://<device-ip>/update`, and upload `smalltv-mod-firmware.bin`. Back up the stock image first if you might want it back.
-
-**SmallTV-ultra.** Same ESP8266 hardware, but the stock "Ultra" firmware reserves most of the flash for image storage, so its OTA slot is too small for `smalltv-mod-firmware.bin` and rejects it with `Not Enough Space`. Install in two steps, no soldering: flash `smalltv-mod-loader.bin` at `http://<device-ip>/update` (it fits the small slot), join the open `SmallTV-Loader` AP it opens at `192.168.4.1`, then upload `smalltv-mod-firmware.bin` at `http://192.168.4.1/update`. UART is the fallback (`esptool write_flash 0x0 smalltv-mod-firmware.bin`).
-
-**SmallTV (ESP32-C2).** Flash over the USB-C cable with esptool, which talks to the onboard CH340C. Auto-reset works, so no button is needed. Back up the stock image first, then write `smalltv-mod-firmware-c2.factory.bin` from the [Releases](../../releases) page:
-
-```bash
-# back up the original 4 MB image first
-python -m esptool --chip esp32c2 --port COM3 read_flash 0x0 0x400000 stock-backup.bin
-
-# write this firmware (merged image at 0x0)
-python -m esptool --chip esp32c2 --port COM3 --baud 921600 write_flash 0x0 smalltv-mod-firmware-c2.factory.bin
-```
-
-**NM-TV-154 (ESP32).** Flash over USB with esptool the same way as the C2, with `--chip esp32` and `smalltv-mod-firmware-esp32.factory.bin` from the [Releases](../../releases) page (or a local `pio run -e smalltv_esp32` build). Back up the stock image first (`read_flash 0x0 0x400000 stock-backup.bin`).
-
-After the first flash, every board updates from the browser under the web UI's Update tab.
-
-## First-time setup
-
-1. On first boot the device shows **SETUP MODE** and creates an open `SmallTV-Setup` hotspot.
-2. Join it. A captive portal should open; if not, browse to `http://192.168.4.1`.
-3. Open **WiFi**, scan, pick your 2.4 GHz network, enter the password, and save. The device reboots and joins.
-4. It shows the network, its IP, and its `http://<hostname>.local` address on screen. Browse to either one.
-5. Add a few tickers under **Ticker** (for example `AAPL`, `NESN.SW`, `BTC-USD`). Each ticker picks its own source; Yahoo Finance is the default, so it works immediately.
-
-The [First-time setup guide](https://giovi321.github.io/smalltv-mod/getting-started/setup/) walks through the web UI tab by tab.
-
-## Documentation
-
-Full docs live at **[giovi321.github.io/smalltv-mod](https://giovi321.github.io/smalltv-mod/)**:
-
-- [Hardware and variants](https://giovi321.github.io/smalltv-mod/getting-started/hardware/) with pin maps for every board
-- [Flashing](https://giovi321.github.io/smalltv-mod/getting-started/flashing/) and [first-time setup](https://giovi321.github.io/smalltv-mod/getting-started/setup/)
-- The three modes: [ticker](https://giovi321.github.io/smalltv-mod/features/ticker/), [Claude usage](https://giovi321.github.io/smalltv-mod/features/usage/), [plane radar](https://giovi321.github.io/smalltv-mod/features/radar/)
-- [Data sources](https://giovi321.github.io/smalltv-mod/reference/data-sources/), [building from source](https://giovi321.github.io/smalltv-mod/reference/building/), and [recovery](https://giovi321.github.io/smalltv-mod/reference/recovery/)
-
-## Building from source
-
-Requires [PlatformIO](https://platformio.org/). Pick the env for your board:
-
-```bash
-pio run -e smalltv                 # ESP8266
-pio run -e smalltv_c2              # ESP32-C2
-pio run -e smalltv_esp32           # NM-TV-154 (classic ESP32)
-pio run -e smalltv_c2 -t upload    # build + flash the C2 over USB-C
-pio device monitor -e smalltv_c2   # serial logs @ 115200
-```
-
-The three targets share one codebase. Chip differences live in `src/Platform.h` and the per-board pin headers (`src/board_esp8266.h`, `src/board_esp32c2.h`, `src/board_esp32.h`); the three feature modes and the web UI are identical across all of them. See [Building from source](https://giovi321.github.io/smalltv-mod/reference/building/) for the project layout and the ESP32 toolchain notes.
-
-The PC-side usage daemon lives in its own repo: [clawdmeter-daemon](https://github.com/giovi321/clawdmeter-daemon).
-
-## Credits and references
-
-- GeekMagic SmallTV and SmallTV-Pro, the original product and stock firmware ([GeekMagicClock/smalltv-pro](https://github.com/GeekMagicClock/smalltv-pro)).
-- Pin maps and hardware notes from the ESPHome and Tasmota communities:
-  - [ViToni/esphome-geekmagic-smalltv](https://github.com/ViToni/esphome-geekmagic-smalltv)
-  - [Installing ESPHome on a new smart weather clock (HA community)](https://community.home-assistant.io/t/installing-esphome-on-new-smart-weather-clock-wifi-weather-station-display/1006172), which documented the ESP32-C2 pin map
-  - [Puddle of Code, My Own GeekMagic SmallTV](https://puddleofcode.com/story/my-own-geekmagic-smalltv/)
-  - [NMMiner's NM-TV-154 custom firmware guide](https://www.nmminer.com/2026/03/02/how-to-develop-nm-tv-custom-firmware/), which documents the NM-TV-154 pin map
-- The plane radar's look reimplements [MatixYo/ESP32-Plane-Radar](https://github.com/MatixYo/ESP32-Plane-Radar), a sonar-style ADS-B radar for a 1.28" round display: heading triangles, speed vectors, callsign and altitude tags, and rim dots for out-of-range traffic all come from that design.
-- Claude usage mode reimplements [clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter) for this hardware; the mascot frames come from [claudepix](https://claudepix.vercel.app).
-- Libraries: [Arduino_GFX](https://github.com/moononournation/Arduino_GFX), [ArduinoJson](https://arduinojson.org/).
+Before first flashing a device, make a 4 MB stock-flash backup and store it
+outside the repo. Never commit it — it may contain saved Wi-Fi credentials.
 
 ## License
 
-[WTFPL](LICENSE). Do What The F*ck You Want To Public License.
+WTFPL (inherited from `giovi321/smalltv-mod`). The custom USB firmware and the
+Wi-Fi usage display are isolated behind the `clock_usb` and `smalltv_ultra`
+PlatformIO targets respectively.

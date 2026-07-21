@@ -1,13 +1,29 @@
-# Smart Weather Clock agent guide
+# SWC Digital agent guide
 
 Read this file and `USB_CLOCK.md` before changing or flashing the clock.
 
 ## Project goal
 
-Turn the inexpensive Smart Weather Clock into a USB-configurable custom display.
-The working baseline is a USB-only ESP8266 firmware: no Wi-Fi portal, no cloud
-dependency, and no stored Wi-Fi password. The user wants changes tested on the
-connected physical clock until the screen is visually confirmed working.
+The repository now carries two firmware lines for the same SmallTV-ultra
+hardware: the Wi-Fi usage display (`smalltv_ultra`) and the USB-only clock
+(`clock_usb`). The USB clock's baseline rules below still apply to the
+`clock_usb` target specifically; the Wi-Fi firmware follows the spec in
+`docs/superpowers/plans/`. The user wants changes tested on the connected
+physical clock until the screen is visually confirmed working.
+
+## Verified reference state (2026-07-21, 3.0.0)
+
+- `smalltv_ultra` Wi-Fi firmware is flashed and running on the physical clock.
+- Three modes — CODEX, Z.AI, AUTO — render the spec layout. AUTO flips every
+  30 s. Codex shows Weekly (5H is N/A for this account); z.ai shows both
+  5H and Weekly.
+- The Mac Wi-Fi usage service (`tools/wifi_usage_service.py`) pushes both
+  providers every 60 s via `_aiusage._tcp` mDNS.
+- After 180 s without a push, the active provider shows STALE (dimmed, last
+  value retained); a successful push restores LIVE within one poll.
+- `clock_usb` remains the USB-only recovery firmware, unchanged.
+- The user visually confirmed orientation, colour, brightness, readability,
+  and smoothness (no flicker, no full-screen redraw per second).
 
 ## Verified reference state (2026-07-17)
 
@@ -86,6 +102,28 @@ network without first assessing its security.
 
 ## Important files
 
+### Wi-Fi usage display (`smalltv_ultra`, 3.0.0)
+
+- `src/features/usage/UsageStore.{h,cpp}`: in-memory usage snapshots with
+  180 s STALE handling.
+- `src/features/usage/UsageMode.{h,cpp}`: CODEX / Z.AI / AUTO screen renderer
+  with partial redraw.
+- `src/features/usage/UsageApi.{h,cpp}`: `POST/GET /api/usage` handlers.
+- `tools/wifi_usage_service.py`: Mac LaunchAgent that polls Codex + z.ai every
+  60 s and pushes to every SmallTV-ultra it discovers over `_aiusage._tcp`.
+- `tools/codex_wifi_adapter.py`: reads `~/.codex/auth.json` and prints the
+  Codex 5H + Weekly percentages (in memory only).
+- `tools/zai_wifi_adapter.py`: reads `~/.claude/settings.json` and prints the
+  z.ai 5H + Weekly percentages (in memory only).
+- `tools/aiusage_mdns.py`: shared `_aiusage._tcp` mDNS responder used by the
+  service and the device.
+- `tools/wifi-usage.toml.example`: template for the Mac service config. The
+  real `tools/wifi-usage.toml` is Git-ignored.
+- `tools/com.night.swc-digital-wifi-usage.plist.example`: LaunchAgent template
+  for the Mac service.
+
+### USB-only clock (`clock_usb`, historical)
+
 - `src/usb_clock.cpp`: custom USB-only firmware and screen renderer.
 - `src/thai_greeting_bitmap.h`: compact Noto Sans Thai test bitmap for
   `สวัสดี`; generated from Noto Sans Thai Regular 2.000 under the SIL OFL 1.1.
@@ -97,24 +135,30 @@ network without first assessing its security.
   proxy, usage polling host, and V2-A Mac-idle emotion engine.
 - `tools/crypto_market.py`: fetches public Coinbase Exchange BTC-USD 1H candles
   and compacts 24 normalized OHLC candles into a bounded USB command.
-- `tools/usage_collector.py`: Mac-side polling collector; provider commands are
-  private TOML configuration and it publishes complete six-value usage snapshots
-  plus public BTC market data when available.
-- `tools/claude_usage.py`: Claude provider adapter. Its Keychain mode uses the
-  current Claude Code identity only in memory; it prints one percentage.
-- `tools/codex_usage.py`: Codex provider adapter. It reads the local profile
-  token only in memory and prints the primary weekly usage percentage.
+- `tools/usage_collector.py`: Mac-side polling collector for the USB clock;
+  provider commands are private TOML configuration and it publishes complete
+  six-value usage snapshots plus public BTC market data when available.
+- `tools/claude_usage.py`: Claude provider adapter for the USB clock collector.
+  Its Keychain mode uses the current Claude Code identity only in memory; it
+  prints one percentage.
+- `tools/codex_usage.py`: Codex provider adapter for the USB clock collector.
+  It reads the local profile token only in memory and prints the primary weekly
+  usage percentage.
 - `tools/usage-collector.toml.example`: safe template for the six local,
-  read-only provider adapters. The real `usage-collector.toml` is Git-ignored.
-- `platformio.ini`: `clock_usb` build target and conservative upload settings.
-- `USB_CLOCK.md`: user commands, build, flash, and restore instructions.
-- `.pio/build/clock_usb/firmware.bin`: generated firmware; never treat it as
-  source or commit it.
+  read-only USB-clock provider adapters. The real `usage-collector.toml` is
+  Git-ignored.
+- `platformio.ini`: `clock_usb`, `smalltv_ultra`, and `smalltv_ultra_loader`
+  build targets with conservative upload settings.
+- `USB_CLOCK.md`: user commands, build, flash, and restore instructions for the
+  USB clock line.
+- `.pio/build/clock_usb/firmware.bin`,
+  `.pio/build/smalltv_ultra/firmware.bin`: generated firmware; never treat as
+  source or commit.
 - `CLAUDE.md`: concise session hand-off; keep it aligned with this file.
 
 The repository began as a clone of `giovi321/smalltv-mod` (WTFPL). The custom
-USB firmware is intentionally isolated behind the `clock_usb` PlatformIO target;
-do not accidentally build or flash the upstream `smalltv` target.
+USB firmware is isolated behind the `clock_usb` PlatformIO target and the Wi-Fi
+usage display behind `smalltv_ultra`; do not confuse the two.
 
 The worktree may be dirty. Treat all existing changes as user-owned unless the
 current task clearly created them; never use reset/checkout to clean it.
@@ -201,11 +245,12 @@ uv run --with pyserial tools/clockctl.py shell
   loop or on every second tick.
 - Validate all serial inputs and keep bounded fixed-size buffers.
 - Never echo secrets over serial or render them on screen.
-- Gallery uploads must stay USB-only. Convert images on the Mac to 240 × 240
-  RGB565 and use the binary `GALLERY BEGIN`/data/`END` protocol implemented by
-  `clock_gui.py`; do not add Wi-Fi, cloud storage, or a browser-accessible
-  network listener.
-- Respect Claude's provider rate limit: the collector rotates C1 → C2 → C3,
+- `clock_usb` must stay USB-only. Gallery uploads on `clock_usb` convert images
+  on the Mac to 240 × 240 RGB565 and use the binary `GALLERY BEGIN`/data/`END`
+  protocol implemented by `clock_gui.py`; do not add Wi-Fi, cloud storage, or a
+  browser-accessible network listener to `clock_usb`. (The Wi-Fi usage push is a
+  separate `smalltv_ultra` firmware line — see `docs/superpowers/plans/`.)
+- Respect Claude's provider rate limit: the USB collector rotates C1 → C2 → C3,
   retains cached Claude values, and refreshes Codex separately. Do not make the
   GUI force a live Claude request.
 - Preserve recovery commands (`TEST`, `SET ROTATION`, `SET BLINVERT`, `SHOW`)
@@ -214,9 +259,12 @@ uv run --with pyserial tools/clockctl.py shell
 
 ## Likely next improvements
 
-- Extend the V2-A persistent Mac service with weather-driven moods, usage
-  thresholds, reminder-as-eyes, and optional auto-return from data screens.
-- Add richer layouts or additional USB-selectable screens while preserving the
-  partial redraw rule.
-- Add an explicit machine-readable protocol/version handshake if external
-  automation grows beyond the current line command interface.
+- For `clock_usb`: extend the V2-A persistent Mac service with weather-driven
+  moods, usage thresholds, reminder-as-eyes, and optional auto-return from data
+  screens.
+- For `clock_usb`: add richer layouts or additional USB-selectable screens while
+  preserving the partial redraw rule.
+- For `clock_usb`: add an explicit machine-readable protocol/version handshake if
+  external automation grows beyond the current line command interface.
+- For `smalltv_ultra`: see `docs/superpowers/plans/` for the live roadmap
+  (AUTO cadence tuning, per-provider alert thresholds, additional providers).

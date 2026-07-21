@@ -1,46 +1,30 @@
 // config.h — compile-time constants for smalltv-mod
 //
-// Hardware: three board variants, all a 1.54" 240x240 ST7789 IPS panel:
-//   - Original GeekMagic SmallTV: ESP-12F (ESP8266)      [board_esp8266.h]
-//   - Knockoff SmallTV:           ESP32-C2 / ESP8684      [board_esp32c2.h]
-//   - NMMiner NM-TV-154:          classic ESP32 (WROOM-32E) [board_esp32.h]
-// The board-specific pin map + panel quirks live in the board headers, selected
-// below by the build-time target macro. Everything else here is shared.
+// Hardware: SmallTV-ultra (GeekMagic original) — ESP-12F (ESP8266) driving a
+// 1.54" 240x240 ST7789 IPS panel. The board-specific pin map + panel quirks
+// live in board_smalltv_ultra.h, included below. (ESP32-C2 and NM-TV-154
+// variants were dropped in 3.0.0.)
 #pragma once
 
 // ---------------------------------------------------------------------------
 // Firmware identity
 // ---------------------------------------------------------------------------
-#define FW_NAME     "smalltv-mod"
-#define FW_VERSION  "2.8.2"
-
-// Project / update references (shown in the web UI; used by the GitHub self-update)
-#define REPO_URL      "https://github.com/giovi321/smalltv-mod"
-#define REPO_OWNER    "giovi321"
-#define REPO_NAME     "smalltv-mod"
-// Release asset the GitHub self-updater pulls — one app image per target.
-#if defined(SMALLTV_ESP32C2)
-  #define UPDATE_ASSET "smalltv-mod-firmware-c2.bin"
-#elif defined(SMALLTV_ESP32)
-  #define UPDATE_ASSET "smalltv-mod-firmware-esp32.bin"
-#else
-  #define UPDATE_ASSET "smalltv-mod-firmware.bin"
-#endif
-#define GH_API_HOST   "api.github.com"
-#define DAEMON_URL    "https://github.com/giovi321/clawdmeter-daemon"
+#define FW_NAME      "swc-digital"
+#define FW_VERSION   "3.0.0"
+#define REPO_OWNER   "night-sornram"
+#define REPO_NAME    "swc-digital"
+#define UPDATE_ASSET "swc-digital-smalltv-ultra.bin"
+#define REPO_URL     "https://github.com/" REPO_OWNER "/" REPO_NAME
+#define GH_API_HOST  "api.github.com"
 
 // ---------------------------------------------------------------------------
 // Display wiring + panel quirks — board-specific, pulled from the right header.
 // Provides TFT_SCLK/MOSI/DC/RST/CS/BL, TFT_BGR, TFT_BL_DEFAULT_INVERTED,
 // HAS_LDR/LDR_PIN/ADC_MAX. Both panels are 1.54" 240x240 ST7789 IPS.
 // ---------------------------------------------------------------------------
-#if defined(SMALLTV_ESP32C2)
-  #include "board_esp32c2.h"
-#elif defined(SMALLTV_ESP32)
-  #include "board_esp32.h"
-#else
-  #include "board_esp8266.h"
-#endif
+// SmallTV-ultra only (ESP-12F / ESP8266). The multi-board target-selection
+// macro was removed in 3.0.0 when ESP32-C2 and NM-TV-154 support was dropped.
+#include "board_smalltv_ultra.h"
 
 #define TFT_WIDTH  240
 #define TFT_HEIGHT 240
@@ -48,124 +32,50 @@
 // ---------------------------------------------------------------------------
 // Limits (bound RAM usage on the ESP8266)
 // ---------------------------------------------------------------------------
-#define MAX_SYMBOLS       8    // max tickers in the rotation
-#define MAX_SYMBOL_LEN   24    // e.g. "BTC-USD", cash.ch key "147478611-246-333"
 #define MAX_WIFI_NETS     4    // saved WiFi networks; strongest visible wins at boot
-#define MAX_NAME_LEN     20    // friendly name shown on screen
-#define MAX_SPARK_POINTS 60    // sparkline samples kept per symbol
 #define MAX_URL_LEN     200    // webhook base URL
 
 // ---------------------------------------------------------------------------
-// Display mode — what the device shows
-//   0 = stock / crypto ticker (per-symbol source, see SRC_* below)
-//   1 = Claude usage meter (mascot + 5h/7d usage bars, fed by the daemon/)
-//   2 = plane radar
-//   3 = carousel: rotate through the ticked features on a timer
+// UI modes (3.0.0)
 // ---------------------------------------------------------------------------
-#define MODE_STOCKS    0
-#define MODE_USAGE     1
-#define MODE_RADAR     2
-#define MODE_CAROUSEL  3
-#define DEFAULT_MODE MODE_STOCKS
-#define DEFAULT_CAROUSEL_SEC 30      // per-mode dwell in carousel
+// Three UI modes for the usage display. AUTO rotates between CODEX and ZAI.
+// Named UiMode to avoid clashing with the DisplayMode renderer base class in
+// Mode.h (that class stays the polymorphic render interface used by main.cpp).
+enum UiMode : uint8_t {
+  MODE_CODEX = 0,
+  MODE_ZAI   = 1,
+  MODE_AUTO  = 2,
+};
+#define DEFAULT_MODE  MODE_AUTO
 
 // ---------------------------------------------------------------------------
-// Compile-time feature toggles. All shipping features are on by default; a lean
-// build drops one by setting e.g. -D WITH_RADAR=0 in a PlatformIO env, which
-// omits that feature's module from the registry and its web UI section.
-// (WITH_RADAR ships off until the radar module lands.)
+// Compile-time feature toggles. WITH_USAGE gates the usage meter (and the mDNS
+// name it advertises); a lean build sets -D WITH_USAGE=0 in a PlatformIO env.
+// (Ticker/Radar toggles were removed in 3.0.0 along with those features.)
 // ---------------------------------------------------------------------------
-#ifndef WITH_TICKER
-#define WITH_TICKER 1
-#endif
 #ifndef WITH_USAGE
 #define WITH_USAGE 1
 #endif
-#ifndef WITH_RADAR
-#define WITH_RADAR 1
-#endif
-
-// Claude usage mode: once data stops arriving for this long (PC asleep, daemon
-// stopped, network down) the screen switches from the stats to the idle mascot
-// animation. Effective timeout also scales with the poll period (see main.cpp).
-#define USAGE_STALE_GRACE_MS  20000UL
 
 // ---------------------------------------------------------------------------
-// Data source (stock mode)
-//   0 = custom webhook (n8n / Node-RED / your own HTTP endpoint)
-//   1 = Yahoo Finance, fetched directly by the device (no backend needed)
-//   2 = cash.ch, fetched directly by the device (Swiss instruments, incl.
-//       off-exchange structured products that Yahoo doesn't carry)
+// Usage display (3.0.0)
 // ---------------------------------------------------------------------------
-#define SRC_WEBHOOK  0
-#define SRC_YAHOO    1
-#define SRC_CASH     2
-#define SRC_GHUB     3   // static JSON published to the repo's data branch (see below)
-#define DEFAULT_SOURCE  SRC_YAHOO            // works out of the box, no server
+#define USAGE_STALE_AFTER_MS    180000UL   // mark STALE after 180 s without a push
+#define USAGE_AUTOROTATE_SEC    30         // AUTO: dwell on each provider
+#define USAGE_AUTOROTATE_MIN    5
+#define USAGE_AUTOROTATE_MAX    3600
 
-// Yahoo Finance public chart endpoint. A browser-like User-Agent is required —
-// requests with an empty UA are rejected with HTTP 429. TLS records from Yahoo
-// are <=~1.3 KB, so the 4 KB BearSSL receive buffer in StockClient is plenty.
-// query1/query2 are interchangeable mirrors; we fall back to the second on a
-// transient failure (a single back-to-back HTTPS fetch occasionally drops).
-#define YAHOO_CHART_HOST1 "query1.finance.yahoo.com"
-#define YAHOO_CHART_HOST2 "query2.finance.yahoo.com"
-#define YAHOO_CHART_PATH  "/v8/finance/chart/"
-#define YAHOO_USER_AGENT  "Mozilla/5.0 (SmallTV)"
-
-// cash.ch public GraphQL endpoint. The device sends two small hand-written
-// GraphQL queries per symbol as plain GETs (?query=...): a ~200 B quote and a
-// slim daily-close series for the sparkline. No API key, no cookies, no
-// required headers. The symbol is the cash.ch listing key
-// `valor-marketId-currencyId` (see the docs for how to find it).
-// cash.ch's CDN requires ECDHE. The ESP32 targets (mbedTLS) do this easily. The
-// ESP8266 (BearSSL) can too, but the handshake is memory-tight, so the cash
-// path is shaped to fit: only cash.ch is offered ECDHE (Yahoo and the GitHub
-// source are pinned to the cheap static-RSA suites), the connection uses 512 B
-// buffers + TLS session resumption, and StockClient skips a fetch unless a
-// large enough contiguous heap block is free. The GitHub source below is a
-// zero-crash fallback if a device ever proves too tight for the direct path.
-
-// GitHub source (SRC_GHUB): a scheduled workflow (.github/workflows/quotes.yml)
-// fetches cash.ch server-side and publishes one JSON file per listing key to
-// the repo's `data` branch. The device reads it from raw.githubusercontent.com,
-// which — unlike cash.ch — still accepts the ESP8266's static-RSA handshake
-// (the same one GitHub self-update and Yahoo use). The file is the same JSON
-// the webhook parser accepts. The symbol is the cash.ch listing key; only keys
-// listed in quotes-config.json are published. raw sends a ~4 KB certificate
-// record and does not negotiate MFLN, so this path uses a larger TLS buffer.
-#define GH_QUOTES_BASE "https://raw.githubusercontent.com/" REPO_OWNER "/" REPO_NAME "/data/quotes/"
-#define GH_QUOTES_RXBUF 5120
-#define CASH_GQL_HOST   "www.cash.ch"
-#define CASH_GQL_PATH   "/_/api/graphql/prod"
-#define CASH_USER_AGENT "Mozilla/5.0 (SmallTV)"
-
-// ---------------------------------------------------------------------------
-// Plane radar (MODE_RADAR)
-//   Data source (radar's own selector, independent of the stock one):
-//     0 = adsb.fi opendata, fetched directly by the device over HTTPS (no key)
-//     1 = custom webhook (a LAN proxy that pre-filters — robust on the ESP8266)
-// ---------------------------------------------------------------------------
-#define RADAR_SRC_DIRECT   0
-#define RADAR_SRC_WEBHOOK  1
-#define DEFAULT_RADAR_SRC  RADAR_SRC_DIRECT
-
-// adsb.fi free open-data endpoint (no API key; public rate limit ~1 req/s).
-// Full path: /api/v3/lat/{lat}/lon/{lon}/dist/{nm}
-#define ADSB_HOST        "opendata.adsb.fi"
-#define ADSB_PATH        "/api/v3/lat/"
-#define ADSB_USER_AGENT  "Mozilla/5.0 (SmallTV)"
-
-// Bound RAM: nearest N aircraft kept/drawn, and a few home-area airports.
-#define MAX_AIRCRAFT     24
-#define MAX_AIRPORTS      6
-#define MAX_ICAO_LEN      8      // ICAO ident + NUL (e.g. "LSZH")
-
-// Defaults (lat/lon 0,0 is the "not set yet" sentinel -> shows a prompt).
-#define DEFAULT_RADAR_LAT       0.0f
-#define DEFAULT_RADAR_LON       0.0f
-#define DEFAULT_RADAR_RANGE_KM  20
-#define DEFAULT_RADAR_POLL_SEC  10     // >=3 keeps us under the 1 req/s limit
+// Palette (RGB565). Match the spec exactly.
+// Each value computed from the #RRGGBB via ((R&0xF8)<<8)|((G&0xFC)<<3)|(B>>3).
+#define USAGE_COLOR_CODEX       0x150F   // #10A37F: (0x10&0xF8)<<8|(0xA3&0xFC)<<3|(0x7F>>3) = 0x1000|0x0500|0x0F
+#define USAGE_COLOR_ZAI         0x6B1F   // #6C63FF: (0x6C&0xF8)<<8|(0x63&0xFC)<<3|(0xFF>>3) = 0x6800|0x0300|0x1F
+#define USAGE_COLOR_BG          0x0883   // #081018: (0x08&0xF8)<<8|(0x10&0xFC)<<3|(0x18>>3) = 0x0800|0x0080|0x03
+#define USAGE_COLOR_CARD        0x10E4   // #111C26: (0x11&0xF8)<<8|(0x1C&0xFC)<<3|(0x26>>3) = 0x1000|0x00E0|0x04
+#define USAGE_COLOR_TEXT        0xF7BF   // #F4F7FA: (0xF4&0xF8)<<8|(0xF7&0xFC)<<3|(0xFA>>3) = 0xF000|0x07A0|0x1F
+#define USAGE_COLOR_MUTED       0x8D16   // #8EA1B2: (0x8E&0xF8)<<8|(0xA1&0xFC)<<3|(0xB2>>3) = 0x8800|0x0500|0x16
+#define USAGE_COLOR_WARN        0xFD84   // #FFB020: (0xFF&0xF8)<<8|(0xB0&0xFC)<<3|(0x20>>3) = 0xF800|0x0580|0x04
+#define USAGE_COLOR_CRIT        0xF28A   // #F05252: (0xF0&0xF8)<<8|(0x52&0xFC)<<3|(0x52>>3) = 0xF000|0x0280|0x0A
+#define USAGE_COLOR_STALE       0x63B0   // #677786: (0x67&0xF8)<<8|(0x77&0xFC)<<3|(0x86>>3) = 0x6000|0x03A0|0x10
 
 // ---------------------------------------------------------------------------
 // Defaults (used on first boot / factory reset)

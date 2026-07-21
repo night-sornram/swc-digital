@@ -29,6 +29,7 @@ __pycache__/
 *.pem
 *.key
 tools/usage-collector.toml
+tools/wifi-usage.toml
 tools/usage-collector-state.json
 tools/.bin/
 tools/*.plist

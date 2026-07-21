@@ -1,197 +1,197 @@
 #include "UsageMode.h"
-#include <Arduino_GFX_Library.h>
-#include "Gfx.h"
-#include "UsageClient.h"
-#include "Mascot.h"
+#include "UsageStore.h"
+#include "../../config.h"
+#include "../../Gfx.h"
+#include <Arduino_GFX_Library.h>   // full Arduino_GFX definition (Gfx.h only fwd-declares it)
 
 UsageMode g_usageMode;
 
-// Claude-usage palette (Anthropic-inspired dark theme, RGB565 of the originals)
-#define C_ACCENT  0xDBAA   // terra-cotta 0xd97757
-#define C_UGREEN  0x7C6B   // green 0x788c5d
-#define C_PANEL   0x18E3   // card fill 0x1f1f1e
-#define C_BARBG   0x2945   // unfilled bar track 0x2a2a28
-#define C_DIM     0xB574   // secondary text 0xb0aea5
-
-// Mascot diff state for the flicker-free full-screen idle animation.
-static bool            s_mascotPrimed  = false;
-static const uint16_t* s_mascotPalette = nullptr;
-static uint8_t         s_prevCells[MASCOT_GRID * MASCOT_GRID];
-
-// Copy a mascot palette into a local RAM array using *byte* reads. pgm_read_byte
-// is safe from both RAM and flash; a 16-bit load straight from flash (irom) faults
-// on the ESP8266, so this never depends on where the palette actually lives.
-static void loadPalette(const uint16_t* palette, uint16_t* out) {
-  const uint8_t* p = (const uint8_t*)palette;
-  for (int k = 0; k < MASCOT_PALETTE_SIZE; k++)
-    out[k] = (uint16_t)(pgm_read_byte(p + 2 * k) | (pgm_read_byte(p + 2 * k + 1) << 8));
+// NOTE on text width: this GFX Library for Arduino version (moononournation
+// @ ^1.5.0) does NOT expose Arduino_GFX::textWidth(). The plan anticipated this
+// and authorised the gfxTextW() fallback (Gfx.h, built-in 6x8 font scaled by
+// `size`). The built-in font is exactly what setTextSize() selects (no setFont
+// call is made below), so gfxTextW(s, size) matches the device rendering.
+static uint16_t barColorFor(uint8_t pct, uint16_t providerColor, bool stale) {
+  if (stale) return USAGE_COLOR_STALE;
+  if (pct >= 90) return USAGE_COLOR_CRIT;
+  if (pct >= 70) return USAGE_COLOR_WARN;
+  return providerColor;
 }
 
-// Draw a 20x20 mascot frame at (x0,y0), cellPx per cell. Reads PROGMEM frame data.
-static void blitMascot(Arduino_GFX* gfx, const uint8_t* cells, const uint16_t* palette,
-                       int x0, int y0, int cellPx) {
-  uint16_t pal[MASCOT_PALETTE_SIZE];
-  loadPalette(palette, pal);
-  for (int i = 0; i < MASCOT_GRID * MASCOT_GRID; i++) {
-    uint8_t code = pgm_read_byte(&cells[i]);
-    uint16_t color = (code < MASCOT_PALETTE_SIZE) ? pal[code] : 0;
-    int gx = i % MASCOT_GRID, gy = i / MASCOT_GRID;
-    gfx->fillRect(x0 + gx * cellPx, y0 + gy * cellPx, cellPx, cellPx, color);
+static void drawCard(int16_t y, const char* label, const UsageWindow& w,
+                     uint16_t providerColor, bool stale) {
+  auto* d = gfxDev();
+  // Card background.
+  d->fillRoundRect(8, y, 224, 74, 6, USAGE_COLOR_CARD);
+  // Label (top-left of card).
+  d->setTextColor(USAGE_COLOR_MUTED);
+  d->setTextSize(2);
+  d->setCursor(18, y + 8);
+  d->print(label);
+  // Big percentage (right side) or N/A.
+  d->setTextSize(4);
+  if (w.available) {
+    d->setTextColor(barColorFor(w.usedPct, providerColor, stale));
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%u%%", w.usedPct);
+    int16_t tw = gfxTextW(buf, 4);   // fallback: textWidth() unavailable in this GFX version
+    d->setCursor(222 - tw, y + 10);
+    d->print(buf);
+  } else {
+    d->setTextColor(USAGE_COLOR_MUTED);
+    const char* na = "N/A";
+    int16_t tw = gfxTextW(na, 4);    // fallback: textWidth() unavailable in this GFX version
+    d->setCursor(222 - tw, y + 10);
+    d->print(na);
+  }
+  // Progress bar (bottom of card).
+  const int16_t by = y + 50, bh = 10, bx = 18, bw = 204;
+  d->fillRoundRect(bx, by, bw, bh, 4, USAGE_COLOR_BG);
+  if (w.available && w.usedPct > 0) {
+    int16_t fw = (int16_t)(bw * (uint32_t)w.usedPct / 100UL);
+    if (fw < 4) fw = 4;
+    d->fillRoundRect(bx, by, fw, bh, 4, barColorFor(w.usedPct, providerColor, stale));
+  }
+  // Reset countdown (small, under the bar).
+  d->setTextSize(1);
+  d->setTextColor(USAGE_COLOR_MUTED);
+  d->setCursor(18, by + 14);
+  if (w.available && w.resetMin != 0xFFFF) {
+    char buf[24];
+    snprintf(buf, sizeof(buf), "RESET %um", w.resetMin);
+    d->print(buf);
+  } else {
+    d->print("RESET --");
   }
 }
 
-static void fmtReset(int mins, char* out, size_t n) {
-  if (mins <= 0) { strlcpy(out, "now", n); return; }
-  int d = mins / 1440, h = (mins % 1440) / 60, m = mins % 60;
-  if (d > 0)      snprintf(out, n, "%dd %dh", d, h);
-  else if (h > 0) snprintf(out, n, "%dh %02dm", h, m);
-  else            snprintf(out, n, "%dm", m);
-}
-
-static uint16_t barColor(float pct) {
-  if (pct >= 90) return C_RED;
-  if (pct >= 75) return C_ACCENT;
-  return C_UGREEN;
-}
-
-// One usage card: big %, a 5h/7d label, a fill bar coloured by load, and the
-// reset countdown. `top` is the card's top y; the card is 82px tall.
-static void drawMeter(Arduino_GFX* gfx, int top, const char* label,
-                      float pct, int resetMins) {
-  const int x = 8, w = 224, h = 82;
-  gfx->fillRoundRect(x, top, w, h, 8, C_PANEL);
-
-  char pc[8];
-  snprintf(pc, sizeof(pc), "%d%%", (int)lroundf(constrain(pct, 0.0f, 100.0f)));
-  uint8_t sz = gfxFitSize(pc, 150, 5);
-  gfx->setTextSize(sz);
-  gfx->setTextColor(C_WHITE);
-  gfx->setCursor(x + 14, top + 10);
-  gfx->print(pc);
-
-  int lw = gfxTextW(label, 2);
-  gfx->setTextSize(2);
-  gfx->setTextColor(C_DIM);
-  gfx->setCursor(x + w - lw - 14, top + 12);
-  gfx->print(label);
-
-  int bx = x + 14, by = top + 52, bw = w - 28, bh = 12;
-  gfx->fillRoundRect(bx, by, bw, bh, bh / 2, C_BARBG);
-  int fw = (int)(bw * constrain(pct, 0.0f, 100.0f) / 100.0f);
-  if (fw >= bh)     gfx->fillRoundRect(bx, by, fw, bh, bh / 2, barColor(pct));
-  else if (fw > 0)  gfx->fillRect(bx, by, fw, bh, barColor(pct));
-
-  char rs[16], line[28];
-  fmtReset(resetMins, rs, sizeof(rs));
-  snprintf(line, sizeof(line), "Resets in %s", rs);
-  gfx->setTextSize(2);
-  gfx->setTextColor(C_DIM);
-  gfx->setCursor(x + 14, top + 64);
-  gfx->print(line);
-}
-
-// Stats screen: mascot header + 5h/7d meters.
-static void drawUsage(const UsageData& u) {
-  Arduino_GFX* gfx = gfxDev();
-  if (!gfx) return;
-  s_mascotPrimed = false;   // force a full redraw next time the idle animation shows
-  gfx->fillScreen(C_BLACK);
-
-  // Header: a small calm mascot pose + title.
-  blitMascot(gfx, mascotIdleCells(), mascotIdlePalette(), 6, 4, 2);
-  gfx->setTextSize(3);
-  gfx->setTextColor(C_WHITE);
-  gfx->setCursor(56, 12);
-  gfx->print("CLAUDE");
-
-  if (!u.valid) {
-    gfxDrawCentered(u.error ? "daemon error" : "waiting...", 120, 2, C_DIM);
-    return;
-  }
-
-  // A non-"allowed" status (warning / rejected) gets a small accent flag.
-  if (u.status[0] && strncmp(u.status, "allowed", 7) != 0) {
-    gfx->fillCircle(228, 18, 5, C_ACCENT);
-  }
-
-  drawMeter(gfx, 50,  "5h", u.sessionPct, u.sessionResetMin);
-  drawMeter(gfx, 138, "7d", u.weeklyPct,  u.weeklyResetMin);
-}
-
-// Idle animation: full-screen mascot, diffed cell-by-cell for a flicker-free draw.
-static void drawMascot(const uint8_t* cells, const uint16_t* palette, bool restart) {
-  Arduino_GFX* gfx = gfxDev();
-  if (!gfx || !cells || !palette) return;
-  uint16_t pal[MASCOT_PALETTE_SIZE];
-  loadPalette(palette, pal);
-  const int CP = TFT_WIDTH / MASCOT_GRID;                 // 240 / 20 = 12
-  const int x0 = (TFT_WIDTH  - MASCOT_GRID * CP) / 2;
-  const int y0 = (TFT_HEIGHT - MASCOT_GRID * CP) / 2;
-
-  // Full redraw on (re)entry or whenever the palette changes (animation switch);
-  // otherwise only repaint the cells that changed since the last frame.
-  bool full = restart || !s_mascotPrimed || palette != s_mascotPalette;
-  if (full) gfx->fillScreen(C_BLACK);
-
-  for (int i = 0; i < MASCOT_GRID * MASCOT_GRID; i++) {
-    uint8_t code = pgm_read_byte(&cells[i]);
-    if (!full && code == s_prevCells[i]) continue;
-    s_prevCells[i] = code;
-    uint16_t color = (code < MASCOT_PALETTE_SIZE) ? pal[code] : 0;
-    int gx = i % MASCOT_GRID, gy = i / MASCOT_GRID;
-    gfx->fillRect(x0 + gx * CP, y0 + gy * CP, CP, CP, color);
-  }
-  s_mascotPrimed  = true;
-  s_mascotPalette = palette;
-}
-
-// ---- DisplayMode ----------------------------------------------------------
 void UsageMode::begin(const Settings& s) {
-  usageInit(s);
-  mascotInit();
-  usageSampled_ = 0;
-  usageRenderedOk_ = 0xFFFFFFFF;
-  showingMascot_ = false;
-  needRender_ = true;
+  needsFullRedraw_ = true;
+  // Default the active provider from settings.mode: CODEX/ZAI pick directly,
+  // AUTO starts on CODEX.
+  active_ = (s.mode == MODE_ZAI) ? PROVIDER_ZAI : PROVIDER_CODEX;
 }
 
 void UsageMode::invalidate(const Settings& s) {
-  needRender_ = true;
-  showingMascot_ = false;
-  usageRenderedOk_ = 0xFFFFFFFF;
-  usageInit(s);
-  usageForceRefresh();
+  begin(s);
+}
+
+void UsageMode::wake(const Settings& s) {
+  // Re-entering from another screen: just repaint, do not refetch (there is no fetch).
+  needsFullRedraw_ = true;
+}
+
+void UsageMode::setActiveProvider(UsageProvider p) {
+  if (p == active_) return;
+  active_ = p;
+  needsFullRedraw_ = true;
+}
+
+void UsageMode::toggleAutoProvider() {
+  active_ = (active_ == PROVIDER_CODEX) ? PROVIDER_ZAI : PROVIDER_CODEX;
+  needsFullRedraw_ = true;
 }
 
 void UsageMode::service(const Settings& s) {
-  // Pull mode: poll the daemon when a Usage URL is set. Push mode: leave it blank
-  // and the daemon POSTs to /api/usage (for networks where the device can't reach
-  // the PC). Either way usageGet() drives the render below.
-  if (s.usage.usageUrl.length() >= 8) usageService(s);
+  const ProviderUsage& pu = g_usageStore.read(active_);
+  bool stale = g_usageStore.stale(active_);
+  uint16_t providerColor = usageProviderColor(active_);
 
-  const UsageData& u = usageGet();
-
-  // Feed the burn-rate tracker once per fresh reading (drives the mascot's mood).
-  if (u.valid && u.lastOkMs != usageSampled_) {
-    usageSampled_ = u.lastOkMs;
-    mascotSample(u.sessionPct);
+  // Full redraw path.
+  if (needsFullRedraw_) {
+    needsFullRedraw_ = false;
+    auto* d = gfxDev();
+    d->fillScreen(USAGE_COLOR_BG);
+    // Title bar.
+    d->fillRect(0, 0, 240, 35, USAGE_COLOR_CARD);
+    d->setTextColor(providerColor);
+    d->setTextSize(3);
+    d->setCursor(10, 8);
+    d->print(usageProviderLabel(active_));
+    // LIVE / STALE pill (right).
+    d->setTextSize(2);
+    const char* pill = stale ? "STALE" : "LIVE";
+    d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
+    int16_t tw = gfxTextW(pill, 2);   // fallback: textWidth() unavailable in this GFX version
+    d->setCursor(232 - tw, 10);
+    d->print(pill);
+    // Cards.
+    drawCard(42,  "5H",     pu.fiveHour, providerColor, stale);
+    drawCard(124, "WEEKLY", pu.weekly,   providerColor, stale);
+    // Reset dirty trackers so subsequent partial updates redraw correctly.
+    for (uint8_t i = 0; i < PROVIDER_COUNT; i++) {
+      lastFiveHourOk_[i]  = g_usageStore.read((UsageProvider)i).fiveHour.available
+                            ? g_usageStore.read((UsageProvider)i).lastOkMs : 0;
+      lastWeeklyOk_[i]    = g_usageStore.read((UsageProvider)i).weekly.available
+                            ? g_usageStore.read((UsageProvider)i).lastOkMs : 0;
+    }
+    lastFiveHourReset_[active_] = pu.fiveHour.resetMin;
+    lastWeeklyReset_[active_]   = pu.weekly.resetMin;
+    lastAgeMin_[active_]        = 0xFFFF;
+    lastStale_[active_]         = stale;
+    return;
   }
 
-  // Considered stale after ~2 missed polls (plus a grace) — then show the animation.
-  uint32_t staleMs = (uint32_t)s.usage.pollSec * 1000UL * 2UL + USAGE_STALE_GRACE_MS;
+  // Partial: status + cards only if lastOkMs changed or stale flipped.
+  bool dataChanged = (pu.lastOkMs != lastFiveHourOk_[active_]) || (stale != lastStale_[active_]);
+  if (dataChanged) {
+    auto* d = gfxDev();
+    // Repaint just the pill + cards region (y=8..198) over a fresh card bg.
+    // (Cheaper than a full clear; never touches y=204..239 to avoid age flicker.)
+    d->fillRect(0, 8, 240, 27, USAGE_COLOR_CARD);   // title bar minus label area
+    // Re-draw label so the cleared bar is not blank.
+    d->setTextColor(providerColor);
+    d->setTextSize(3);
+    d->setCursor(10, 8);
+    d->print(usageProviderLabel(active_));
+    d->setTextSize(2);
+    const char* pill = stale ? "STALE" : "LIVE";
+    d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
+    int16_t tw = gfxTextW(pill, 2);   // fallback: textWidth() unavailable in this GFX version
+    d->setCursor(232 - tw, 10);
+    d->print(pill);
+    drawCard(42,  "5H",     pu.fiveHour, providerColor, stale);
+    drawCard(124, "WEEKLY", pu.weekly,   providerColor, stale);
+    lastFiveHourOk_[active_] = pu.lastOkMs;
+    lastWeeklyOk_[active_]   = pu.lastOkMs;
+    lastStale_[active_]      = stale;
+  }
 
-  if (usageFresh(staleMs)) {
-    if (showingMascot_) { showingMascot_ = false; needRender_ = true; }
-    if (u.lastOkMs != usageRenderedOk_) { usageRenderedOk_ = u.lastOkMs; needRender_ = true; }
-    if (needRender_) { drawUsage(u); needRender_ = false; }
-  } else {
-    if (!showingMascot_) {
-      showingMascot_ = true;
-      usageRenderedOk_ = 0xFFFFFFFF;
-      mascotReset();
-      drawMascot(mascotCells(), mascotPalette(), /*restart=*/true);
-    } else if (mascotTick()) {
-      drawMascot(mascotCells(), mascotPalette(), /*restart=*/false);
+  // Partial: reset countdown only when the minute value changed.
+  // (Codex/z.ai push reset_min as minutes already; we redraw the card's reset
+  // row when it changed since last paint. Cheap: just compare to last value.)
+  if (pu.fiveHour.resetMin != lastFiveHourReset_[active_] ||
+      pu.weekly.resetMin   != lastWeeklyReset_[active_]) {
+    // Redrawing the whole card is simplest given the small text region overlap;
+    // it is bounded (74px tall) and only runs on a real change.
+    drawCard(42,  "5H",     pu.fiveHour, providerColor, stale);
+    drawCard(124, "WEEKLY", pu.weekly,   providerColor, stale);
+    lastFiveHourReset_[active_] = pu.fiveHour.resetMin;
+    lastWeeklyReset_[active_]   = pu.weekly.resetMin;
+  }
+
+  // Partial: age row (y=204..239) only when the minute value changed.
+  uint32_t age = g_usageStore.ageMs(active_);
+  uint16_t ageMin = (age == 0xFFFFFFFFUL) ? 0xFFFF : (uint16_t)(age / 60000UL);
+  if (ageMin != lastAgeMin_[active_]) {
+    auto* d = gfxDev();
+    d->fillRect(0, 204, 240, 36, USAGE_COLOR_BG);
+    d->setTextSize(2);
+    d->setTextColor(USAGE_COLOR_MUTED);
+    d->setCursor(10, 212);
+    if (age == 0xFFFFFFFFUL) {
+      d->print("AGE --");
+    } else {
+      char buf[20];
+      snprintf(buf, sizeof(buf), "AGE %um", ageMin);
+      d->print(buf);
     }
+    // AUTO / MANUAL marker (right).
+    const char* am = (s.mode == MODE_AUTO) ? "AUTO" : "MANUAL";
+    d->setTextColor((s.mode == MODE_AUTO) ? providerColor : USAGE_COLOR_MUTED);
+    int16_t tw = gfxTextW(am, 2);   // fallback: textWidth() unavailable in this GFX version
+    d->setCursor(232 - tw, 212);
+    d->print(am);
+    lastAgeMin_[active_] = ageMin;
   }
 }

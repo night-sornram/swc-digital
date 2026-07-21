@@ -6,8 +6,8 @@
 #include "Net.h"
 #include "Gfx.h"
 #include "OtaUpdate.h"
-#include "StockClient.h"
-#include "UsageClient.h"
+#include "UsageApi.h"
+#include "features/usage/UsageStore.h"
 #include "Clock.h"
 
 // Defined in main.cpp — re-init every mode + force a repaint after a config change.
@@ -44,18 +44,10 @@ static void handleGetConfig() {
   JsonObject root = doc.to<JsonObject>();
   settingsToJson(*S, root, /*includeSecrets=*/false);
   // Which features are compiled in (so a lean build hides the tabs it dropped).
-  JsonObject feat = root["features"].to<JsonObject>();
-  feat["ticker"] = (bool)WITH_TICKER;
-  feat["usage"]  = (bool)WITH_USAGE;
-  feat["radar"]  = (bool)WITH_RADAR;
+  JsonObject feats = root["features"].to<JsonObject>();
+  feats["usage"] = (bool)WITH_USAGE;
   // Which chip this build runs on (the UI warns about per-chip limitations).
-#if defined(SMALLTV_ESP32C2)
-  root["chip"] = "esp32c2";
-#elif defined(SMALLTV_ESP32)
-  root["chip"] = "esp32";
-#else
   root["chip"] = "esp8266";
-#endif
   sendJson(doc);
 }
 
@@ -82,26 +74,19 @@ static void handleStatus() {
   o["night"]     = clockNightActive();   // dimming now
   o["nightHeld"] = clockNightHeld();      // in the window but waiting for a fresh NTP sync
   o["clockFresh"] = clockTrusted();       // last NTP sync within the trust window
-
-#if WITH_TICKER
-  JsonArray arr = o["tickers"].to<JsonArray>();
-  for (uint8_t i = 0; i < stocksCount(); i++) {
-    const StockData& d = stockAt(i);
-    JsonObject t = arr.add<JsonObject>();
-    t["symbol"] = d.symbol;
-    t["valid"] = d.valid;
-    t["error"] = d.error;
-    if (d.valid) {
-      t["price"] = d.price;
-      float chg, pct;
-      bool onRange = false;
-      if (stockDisplayChange(d, S->ticker, chg, pct, &onRange)) {
-        t["changePct"] = pct;                       // as displayed on the device
-        t["basis"] = onRange ? "range" : "day";     // which basis that was
-      }
-    }
+  // Hardware identity and usage overview (read-only; the refresh button must
+  // NOT trigger a provider API call).
+  o["hardware"] = "SmallTV-ultra · ESP8266";
+  o["chip"] = "esp8266";
+  {
+    String usageJson;
+    g_usageStore.serializeOverview(usageJson);
+    // Parse it back into the status doc (cheap; small object).
+    JsonDocument ud;
+    deserializeJson(ud, usageJson);
+    o["usage"] = ud.as<JsonObjectConst>();
   }
-#endif
+
   sendJson(doc);
 }
 
@@ -202,13 +187,6 @@ static void handleImport() {
   scheduleReboot(800);
 }
 
-static void handleRefresh() {
-#if WITH_TICKER
-  stocksForceRefresh();
-#endif
-  server.send(200, "application/json", "{\"ok\":true}");
-}
-
 // Check the newest GitHub release against the running version.
 static void handleCheckUpdate() {
   OtaLatest r = otaCheckLatest(*S);
@@ -228,19 +206,6 @@ static void handleSelfUpdate() {
   g_selfUpdate = true;
   g_updateMsg = "starting...";
   server.send(200, "application/json", "{\"ok\":true}");
-}
-
-// Push endpoint: the daemon POSTs the usage payload here when the device can't
-// reach it (Wi-Fi client isolation). Body is the {s,sr,w,wr,st,ok} contract.
-static void handleUsagePush() {
-  if (!server.hasArg("plain")) { server.send(400, "text/plain", "no body"); return; }
-#if WITH_USAGE
-  bool ok = usageApply(server.arg("plain"));
-#else
-  bool ok = false;
-#endif
-  server.send(ok ? 200 : 400, "application/json",
-              ok ? "{\"ok\":true}" : "{\"ok\":false}");
 }
 
 // ---- OTA ------------------------------------------------------------------
@@ -295,13 +260,12 @@ void webPortalBegin(Settings& settings) {
   server.on("/api/scan", HTTP_GET, handleScan);
   server.on("/api/reboot", HTTP_POST, handleReboot);
   server.on("/api/factory", HTTP_POST, handleFactory);
-  server.on("/api/refresh", HTTP_POST, handleRefresh);
   server.on("/api/export", HTTP_GET, handleExport);
   server.on("/api/import", HTTP_POST, handleImport);
   server.on("/api/checkupdate", HTTP_GET, handleCheckUpdate);
   server.on("/api/selfupdate", HTTP_POST, handleSelfUpdate);
-  server.on("/api/usage", HTTP_POST, handleUsagePush);   // daemon pushes usage here
   server.on("/update", HTTP_POST, handleUpdateDone, handleUpdateUpload);
+  usageApiBegin(server);   // registers GET + POST /api/usage
 
   // Common captive-portal probe endpoints
   server.on("/generate_204", handleNotFound);

@@ -1,27 +1,37 @@
-// UsageMode.h — Claude usage meter feature.
+// UsageMode.h — the usage display renderer (CODEX / Z.AI / AUTO).
 //
-// Shows 5h/7d usage bars + a small mascot when data is flowing, and an animated
-// pixel-art mascot when the daemon goes quiet. Owns its fetch (UsageClient), its
-// mascot animation (Mascot) and its render/dirty state.
+// One renderer, parameterised by provider. In AUTO the active provider is
+// toggled by main.cpp on the autoRotateSec timer. Redraw rules:
+//   - full redraw: on mode change, provider change, rotation change, visual cfg
+//   - status+cards: on new data (lastOkMs changed)
+//   - countdown + age: only when their minute value changes
+// Never clear/redraw the full panel every second.
 #pragma once
 #include "Mode.h"
-#include "config.h"
+#include "UsageStore.h"
 
 class UsageMode : public DisplayMode {
  public:
-  const char* id() const override { return "usage"; }
-  uint8_t     modeConst() const override { return MODE_USAGE; }
-
+  const char* id() const override        { return "usage"; }
+  uint8_t     modeConst() const override { return MODE_AUTO; }  // see note below
   void begin(const Settings& s) override;
   void service(const Settings& s) override;
   void invalidate(const Settings& s) override;
-  void wake(const Settings& s) override { needRender_ = true; }  // repaint only
+  void wake(const Settings& s) override;
 
+  // Called by main.cpp when AUTO rotates: repaint the new provider.
+  void setActiveProvider(UsageProvider p);
+  void toggleAutoProvider();   // flips CODEX <-> ZAI (AUTO mode only)
  private:
-  uint32_t usageSampled_ = 0;              // lastOkMs already fed to the mascot tracker
-  uint32_t usageRenderedOk_ = 0xFFFFFFFF;
-  bool     showingMascot_ = false;
-  bool     needRender_ = true;
+  bool needsFullRedraw_ = true;
+  UsageProvider active_ = PROVIDER_CODEX;
+  // Last values rendered (dirty tracking).
+  uint32_t lastFiveHourOk_[PROVIDER_COUNT]  = {0};
+  uint32_t lastWeeklyOk_[PROVIDER_COUNT]    = {0};
+  uint16_t lastFiveHourReset_[PROVIDER_COUNT] = {0xFFFF, 0xFFFF};
+  uint16_t lastWeeklyReset_[PROVIDER_COUNT]   = {0xFFFF, 0xFFFF};
+  uint16_t lastAgeMin_[PROVIDER_COUNT]        = {0xFFFF, 0xFFFF};
+  bool     lastStale_[PROVIDER_COUNT]         = {false, false};
 };
 
 extern UsageMode g_usageMode;
