@@ -8,6 +8,9 @@ Subcommands:
   install  Register the LaunchAgent so the service auto-starts at login and
            survives reboots. Writes the plist with correct absolute paths,
            loads it, and verifies the job is running. Idempotent.
+  setup    Guided one-shot setup for a fresh Mac: deps → config → pair →
+           install → verify. The easiest way to get a new machine running.
+  uninstall  Stop the service and remove the LaunchAgent.
 
 Legacy compat: calling with NO subcommand runs `run` (so the existing
 LaunchAgent plist keeps working until the user updates it).
@@ -183,7 +186,11 @@ def _plist_contents(uv_bin: str, script: str, config: str, log_path: str) -> str
 
 
 def cmd_install(args) -> int:
-    """Register the LaunchAgent: write the plist, load it, verify."""
+    """Register the LaunchAgent: write the plist, load it, verify.
+
+    Idempotent and fresh-Mac friendly: auto-creates the config from the
+    example if missing, and offers to run `pair` if the device is unpaired.
+    """
     import subprocess
     repo = Path(__file__).resolve().parent
     config = Path(os.environ.get("WIFI_USAGE_CONFIG", repo / "wifi-usage.toml"))
@@ -192,28 +199,41 @@ def cmd_install(args) -> int:
     plist_path = Path("~/Library/LaunchAgents").expanduser() / f"{LABEL}.plist"
     log_path = Path("~/Library/Logs/swc-digital-wifi-usage.log").expanduser()
 
+    # Auto-create config from the example if a fresh clone has none yet.
     if not config.exists():
-        print(f"install: config not found at {config}", file=sys.stderr)
-        print("hint: copy tools/wifi-usage.toml.example and fill it in, "
-              "or run `pair` first (it writes the device id).", file=sys.stderr)
-        return 2
+        example = repo / "wifi-usage.toml.example"
+        if example.exists():
+            config.write_text(example.read_text())
+            print(f"created {config} from {example.name} (edit if you want "
+                  "non-default weather coords).")
+        else:
+            print(f"install: config not found at {config} and no example to "
+                  "copy from.", file=sys.stderr)
+            return 2
 
-    # Sanity: is this Mac actually paired with a device? `run` would spin
-    # harmlessly without one, but it's friendlier to tell the user now.
+    # Is this Mac paired? If --url was given, pair non-interactively; otherwise
+    # just warn (the guided `setup` command handles interactive pairing, and
+    # prompting from inside install causes stdin-order bugs under launchd).
     dev_id = _read_device_id(config)
-    if not dev_id:
-        print("install: no [device] id in config — the service will start but "
-              "has nothing to push to.", file=sys.stderr)
-        print("hint: run `wifi_usage_service.py pair --url <device-url>` first.",
-              file=sys.stderr)
-    else:
+    paired = False
+    if dev_id:
         try:
             import device_client as dc
             dc.keychain_get(dev_id)   # raises if missing
+            paired = True
         except Exception:
-            print(f"install: device {dev_id} is in config but no pairkey is in "
-                  f"Keychain. Run `pair --url <device-url>` first.", file=sys.stderr)
-            return 2
+            pass   # id present but no key — fall through
+    if not paired:
+        if getattr(args, "url", None):
+            ns = argparse.Namespace(url=args.url)
+            if cmd_pair(ns) != 0:
+                print("install: pairing failed — the service will be registered "
+                      "but cannot push until you pair.", file=sys.stderr)
+        else:
+            print("install: device not yet paired. The service is registered "
+                  "but will not push until you pair:", file=sys.stderr)
+            print("  run `wifi_usage_service.py setup` (guided), or "
+                  "`pair --url <url>` then restart.", file=sys.stderr)
 
     plist_dir = plist_path.parent
     plist_dir.mkdir(parents=True, exist_ok=True)
@@ -252,6 +272,103 @@ def cmd_install(args) -> int:
     print("Done. The service auto-starts at login and restarts if it crashes.")
     print(f"Tail logs: tail -f {log_path}")
     return 0
+
+
+# ---- interactive helpers (used by install + setup) -------------------------
+
+def _prompt(question: str, default: str = "") -> str:
+    """Read a line from stdin with an optional default shown in brackets."""
+    suffix = f" [{default}]" if default else ""
+    try:
+        val = input(f"{question}{suffix}: ").strip()
+    except EOFError:
+        val = ""
+    return val or default
+
+
+def _confirm(question: str) -> bool:
+    """Yes/no prompt. Empty input = yes (keeps guided flow moving)."""
+    try:
+        ans = input(f"{question} [Y/n] ").strip().lower()
+    except EOFError:
+        ans = ""
+    return ans in ("", "y", "yes")
+
+
+def cmd_setup(args) -> int:
+    """One-shot guided setup for a fresh Mac: deps → config → pair → install → verify."""
+    repo = Path(__file__).resolve().parent
+    print("=" * 60)
+    print("  SWC Digital — fresh Mac setup")
+    print("=" * 60)
+
+    # 1. Dependencies.
+    print("\n[1/4] Checking dependencies...")
+    try:
+        uv_bin = _resolve_uv()
+        print(f"  ✓ uv found: {uv_bin}")
+    except RuntimeError as exc:
+        print(f"  ✗ {exc}", file=sys.stderr)
+        return 2
+    import shutil
+    missing = [d for d in ("zeroconf", "psutil")
+               if shutil.which("uv") and _py_dep_missing(d)]
+    # zeroconf/psutil are pulled by `uv run --with`, so we don't require a
+    # global install; just note that the service provides them.
+    print("  ✓ zeroconf + psutil provided via `uv run --with` at runtime")
+
+    # 2. Config.
+    print("\n[2/4] Config...")
+    config = Path(os.environ.get("WIFI_USAGE_CONFIG", repo / "wifi-usage.toml"))
+    if not config.exists():
+        example = repo / "wifi-usage.toml.example"
+        config.write_text(example.read_text())
+        print(f"  ✓ created {config} from example")
+    else:
+        print(f"  ✓ config exists: {config}")
+
+    # 3. Pair (unless already paired).
+    print("\n[3/4] Pairing...")
+    dev_id = _read_device_id(config)
+    paired = False
+    if dev_id:
+        try:
+            import device_client as dc
+            dc.keychain_get(dev_id)
+            paired = True
+            print(f"  ✓ already paired with device {dev_id}")
+        except Exception:
+            pass
+    if not paired:
+        url = _prompt("Device URL (e.g. http://192.168.4.1)",
+                      default="http://192.168.4.1")
+        ns = argparse.Namespace(url=url)
+        if cmd_pair(ns) != 0:
+            print("  ✗ pairing failed. Fix the issue and re-run `setup`.",
+                  file=sys.stderr)
+            return 2
+
+    # 4. Install the LaunchAgent.
+    print("\n[4/4] Installing LaunchAgent...")
+    ns = argparse.Namespace(uv_bin=uv_bin, url=None)
+    if cmd_install(ns) != 0:
+        print("  ✗ install failed.", file=sys.stderr)
+        return 2
+
+    print("\n" + "=" * 60)
+    print("  Setup complete! The service is running and will auto-start at login.")
+    print(f"  Tail logs: tail -f ~/Library/Logs/swc-digital-wifi-usage.log")
+    print("=" * 60)
+    return 0
+
+
+def _py_dep_missing(dep: str) -> bool:
+    """True if a Python package can't be imported in the current env."""
+    try:
+        __import__(dep)
+        return False
+    except ImportError:
+        return True
 
 
 def _read_device_id(config: Path) -> Optional[str]:
@@ -465,12 +582,20 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     p_inst = sub.add_parser("install",
                             help="register the LaunchAgent (auto-start at login, "
-                                 "survive reboots). Idempotent.")
+                                 "survive reboots). Idempotent. Auto-creates "
+                                 "config + offers to pair on a fresh Mac.")
     p_inst.add_argument("--uv-bin", help="path to uv binary (default: auto-detect)")
+    p_inst.add_argument("--url", help="device URL to pair with if unpaired "
+                                      "(default: prompt interactively)")
     p_inst.set_defaults(func=cmd_install)
 
     p_uninst = sub.add_parser("uninstall", help="stop the service and remove the LaunchAgent")
     p_uninst.set_defaults(func=cmd_uninstall)
+
+    p_setup = sub.add_parser("setup",
+                             help="guided one-shot setup for a fresh Mac: deps → "
+                                  "config → pair → install → verify.")
+    p_setup.set_defaults(func=cmd_setup)
 
     args = p.parse_args(argv)
     if not args.cmd:

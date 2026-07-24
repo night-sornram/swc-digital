@@ -14,6 +14,35 @@ The recovery loader (`smalltv_ultra_loader`) is a tiny Wi-Fi + web-OTA image use
 to slip a full firmware past a stock updater that rejects the full image for
 lack of space.
 
+## Quickstart (fresh Mac)
+
+One command sets up everything — config, pairing, and the auto-starting
+background service:
+
+```sh
+git clone https://github.com/night-sornram/swc-digital.git
+cd swc-digital
+uv run --python 3.11 --with zeroconf --with psutil tools/wifi_usage_service.py setup
+```
+
+`setup` walks you through: dependency check → config creation → device
+pairing → LaunchAgent install → verification. The pairkey is stored in macOS
+Keychain (never in a file). After it completes, usage data is pushed to the
+device every 60 s and the service survives reboots.
+
+**Prerequisites:** the device must already be flashed with the Wi-Fi firmware
+(see [Build](#build) + [Flash](#flash) below) and booted into its Setup AP
+(join `SmallTV-Setup` on your Mac before running `setup`).
+
+Other commands (run individually if you prefer):
+
+```sh
+tools/wifi_usage_service.py pair --url http://192.168.4.1   # pair a device
+tools/wifi_usage_service.py install                         # register the service
+tools/wifi_usage_service.py uninstall                       # remove the service
+tail -f ~/Library/Logs/swc-digital-wifi-usage.log           # watch it push
+```
+
 ## Hardware
 
 - MCU: ESP8266EX, 26 MHz crystal, 4 MB flash (DIO, 40 MHz).
