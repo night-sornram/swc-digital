@@ -19,6 +19,20 @@ static uint16_t barColorFor(uint8_t pct, uint16_t providerColor, bool stale) {
   return providerColor;
 }
 
+// Title-bar freshness pill (top-right). Three tiers: LIVE / STALE / OFFLINE.
+// STALE and OFFLINE share the grey color; OFFLINE distinguishes itself via text.
+static void drawFreshnessPill(Freshness f) {
+  auto* d = gfxDev();
+  d->setTextSize(2);
+  const char* pill = (f == Freshness::LIVE) ? "LIVE"
+                   : (f == Freshness::STALE) ? "STALE"
+                   :                           "OFFLINE";
+  d->setTextColor((f == Freshness::LIVE) ? USAGE_COLOR_TEXT : USAGE_COLOR_STALE);
+  int16_t tw = gfxTextW(pill, 2);
+  d->setCursor(232 - tw, 10);
+  d->print(pill);
+}
+
 // WMO weather code → label + icon drawing.
 // See open-meteo docs: 0=clear, 1-3=cloudy, 45-48=fog, 51-67=rain,
 // 71-77=snow, 80-82=showers, 95-99=thunderstorm.
@@ -320,8 +334,26 @@ void UsageMode::toggleAutoProvider(uint8_t mask) {
 
 void UsageMode::service(const Settings& s) {
   const ProviderUsage& pu = g_usageStore.read(active_);
-  bool stale = g_usageStore.stale(active_);
+  Freshness fresh   = g_usageStore.freshness(active_);
+  bool      stale   = (fresh != Freshness::LIVE);   // dims colors (STALE + OFFLINE)
+  bool      offline = (fresh == Freshness::OFFLINE);
   uint16_t providerColor = usageProviderColor(active_);
+
+  // OFFLINE view: hide all pushed metrics so stale numbers can't mislead.
+  // When offline, `view` reports every slot as unavailable; the existing
+  // N/A ("--") rendering in each draw helper does the rest. The clock on the
+  // WEATHER screen is device-local (NTP), so it stays live regardless.
+  ProviderUsage view = pu;
+  if (offline) {
+    view.fiveHour.available = false;
+    view.weekly.available   = false;
+    view.extraPct     = 0xFF;
+    view.tempC        = (int8_t)0x80;
+    view.batteryPct   = 0xFF;
+    view.uptimeMin    = 0xFFFF;
+    view.weatherCode  = 0xFF;
+    view.aqiPm25      = 0xFF;
+  }
 
   // SYSTEM provider: dedicated 3-card compact layout. Keeps the same
   // dirty-tracking model (full redraw only on enter / data change).
@@ -336,31 +368,27 @@ void UsageMode::service(const Settings& s) {
       d->setTextSize(3);
       d->setCursor(10, 8);
       d->print(usageProviderLabel(active_));
-      d->setTextSize(2);
-      const char* pill = stale ? "STALE" : "LIVE";
-      d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
-      int16_t tw = gfxTextW(pill, 2);
-      d->setCursor(232 - tw, 10);
-      d->print(pill);
+      drawFreshnessPill(fresh);
       // 3 compact cards: CPU / RAM / SSD. five_hour=CPU, weekly=RAM, extra=SSD.
-      drawSystemCard(42,  "CPU", pu.fiveHour.usedPct, pu.fiveHour.available, providerColor, stale);
-      drawSystemCard(96,  "RAM", pu.weekly.usedPct,   pu.weekly.available,   providerColor, stale);
-      bool ssd_avail = (pu.extraPct != 0xFF);
-      drawSystemCard(150, "DISK", pu.extraPct,        ssd_avail,             providerColor, stale);
-      lastStale_[active_]         = stale;
+      drawSystemCard(42,  "CPU", view.fiveHour.usedPct, view.fiveHour.available, providerColor, stale);
+      drawSystemCard(96,  "RAM", view.weekly.usedPct,   view.weekly.available,   providerColor, stale);
+      bool ssd_avail = (view.extraPct != 0xFF);
+      drawSystemCard(150, "DISK", view.extraPct,        ssd_avail,              providerColor, stale);
+      lastFresh_[active_]         = fresh;
       lastFiveHourOk_[active_]    = pu.lastOkMs;
       lastWeeklyOk_[active_]      = pu.lastOkMs;
       return;
     }
-    // Partial: data changed → full repaint of card region (3 cards cheap).
-    if (pu.lastOkMs != lastFiveHourOk_[active_] || stale != lastStale_[active_]) {
-      drawSystemCard(42,  "CPU", pu.fiveHour.usedPct, pu.fiveHour.available, providerColor, stale);
-      drawSystemCard(96,  "RAM", pu.weekly.usedPct,   pu.weekly.available,   providerColor, stale);
-      bool ssd_avail = (pu.extraPct != 0xFF);
-      drawSystemCard(150, "DISK", pu.extraPct,        ssd_avail,             providerColor, stale);
+    // Partial: repaint when data lands OR the freshness tier changes (e.g.
+    // LIVE→OFFLINE must hide values; OFFLINE→LIVE must reveal them).
+    if (pu.lastOkMs != lastFiveHourOk_[active_] || fresh != lastFresh_[active_]) {
+      drawSystemCard(42,  "CPU", view.fiveHour.usedPct, view.fiveHour.available, providerColor, stale);
+      drawSystemCard(96,  "RAM", view.weekly.usedPct,   view.weekly.available,   providerColor, stale);
+      bool ssd_avail = (view.extraPct != 0xFF);
+      drawSystemCard(150, "DISK", view.extraPct,        ssd_avail,              providerColor, stale);
       lastFiveHourOk_[active_] = pu.lastOkMs;
       lastWeeklyOk_[active_]   = pu.lastOkMs;
-      lastStale_[active_]      = stale;
+      lastFresh_[active_]      = fresh;
     }
     // Age row (same as AI providers).
     return;   // fall through below is the AI-provider path; SYSTEM returns here.
@@ -377,12 +405,7 @@ void UsageMode::service(const Settings& s) {
       d->setTextSize(3);
       d->setCursor(10, 8);
       d->print("MAC");
-      d->setTextSize(2);
-      const char* pill = stale ? "STALE" : "LIVE";
-      d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
-      int16_t tw = gfxTextW(pill, 2);
-      d->setCursor(232 - tw, 10);
-      d->print(pill);
+      drawFreshnessPill(fresh);
       // CPU hero card (full width, VITALS style: label + big number).
       auto* d2 = gfxDev();
       d2->fillRoundRect(4, 42, 232, 56, 5, USAGE_COLOR_CARD);
@@ -391,9 +414,9 @@ void UsageMode::service(const Settings& s) {
       d2->setCursor(18, 48);
       d2->print("CPU");
       d2->setTextSize(4);
-      if (pu.fiveHour.available) {
-        d2->setTextColor(barColorFor(pu.fiveHour.usedPct, providerColor, stale));
-        char buf[8]; snprintf(buf, sizeof(buf), "%u%%", pu.fiveHour.usedPct);
+      if (view.fiveHour.available) {
+        d2->setTextColor(barColorFor(view.fiveHour.usedPct, providerColor, stale));
+        char buf[8]; snprintf(buf, sizeof(buf), "%u%%", view.fiveHour.usedPct);
         int16_t tw2 = gfxTextW(buf, 4);
         d2->setCursor(226 - tw2, 50);
         d2->print(buf);
@@ -405,23 +428,23 @@ void UsageMode::service(const Settings& s) {
       }
       // Slim bar.
       d2->fillRoundRect(14, 82, 212, 8, 3, USAGE_COLOR_BG);
-      if (pu.fiveHour.available && pu.fiveHour.usedPct > 0) {
-        int16_t fw = (int16_t)(204 * (uint32_t)pu.fiveHour.usedPct / 100UL);
+      if (view.fiveHour.available && view.fiveHour.usedPct > 0) {
+        int16_t fw = (int16_t)(204 * (uint32_t)view.fiveHour.usedPct / 100UL);
         if (fw < 4) fw = 4;
-        d2->fillRoundRect(14, 82, fw, 8, 3, barColorFor(pu.fiveHour.usedPct, providerColor, stale));
+        d2->fillRoundRect(14, 82, fw, 8, 3, barColorFor(view.fiveHour.usedPct, providerColor, stale));
       }
       // RAM + DISK side by side (half width).
-      drawVitalsCard(4,   104, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
-      bool ssdAvail = (pu.extraPct != 0xFF);
-      drawVitalsCard(120, 104, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
+      drawVitalsCard(4,   104, "RAM",  view.weekly.usedPct,   view.weekly.available,   false, providerColor, stale);
+      bool ssdAvail = (view.extraPct != 0xFF);
+      drawVitalsCard(120, 104, "DISK", view.extraPct,         ssdAvail,                false, providerColor, stale);
       // Banner: battery + uptime.
-      drawVitalsBanner(180, pu.batteryPct, pu.uptimeMin, stale);
+      drawVitalsBanner(180, view.batteryPct, view.uptimeMin, stale);
       lastFiveHourOk_[active_] = pu.lastOkMs;
-      lastStale_[active_]      = stale;
+      lastFresh_[active_]      = fresh;
       return;
     }
-    // Partial: data changed → repaint cards + banner.
-    if (pu.lastOkMs != lastFiveHourOk_[active_] || stale != lastStale_[active_]) {
+    // Partial: repaint when data lands OR the freshness tier changes.
+    if (pu.lastOkMs != lastFiveHourOk_[active_] || fresh != lastFresh_[active_]) {
       // CPU full width.
       auto* d3 = gfxDev();
       d3->fillRoundRect(4, 42, 232, 56, 5, USAGE_COLOR_CARD);
@@ -430,9 +453,9 @@ void UsageMode::service(const Settings& s) {
       d3->setCursor(18, 48);
       d3->print("CPU");
       d3->setTextSize(4);
-      if (pu.fiveHour.available) {
-        d3->setTextColor(barColorFor(pu.fiveHour.usedPct, providerColor, stale));
-        char buf[8]; snprintf(buf, sizeof(buf), "%u%%", pu.fiveHour.usedPct);
+      if (view.fiveHour.available) {
+        d3->setTextColor(barColorFor(view.fiveHour.usedPct, providerColor, stale));
+        char buf[8]; snprintf(buf, sizeof(buf), "%u%%", view.fiveHour.usedPct);
         int16_t tw3 = gfxTextW(buf, 4);
         d3->setCursor(226 - tw3, 50);
         d3->print(buf);
@@ -443,17 +466,17 @@ void UsageMode::service(const Settings& s) {
         d3->print("--");
       }
       d3->fillRoundRect(14, 82, 212, 8, 3, USAGE_COLOR_BG);
-      if (pu.fiveHour.available && pu.fiveHour.usedPct > 0) {
-        int16_t fw = (int16_t)(204 * (uint32_t)pu.fiveHour.usedPct / 100UL);
+      if (view.fiveHour.available && view.fiveHour.usedPct > 0) {
+        int16_t fw = (int16_t)(204 * (uint32_t)view.fiveHour.usedPct / 100UL);
         if (fw < 4) fw = 4;
-        d3->fillRoundRect(14, 82, fw, 8, 3, barColorFor(pu.fiveHour.usedPct, providerColor, stale));
+        d3->fillRoundRect(14, 82, fw, 8, 3, barColorFor(view.fiveHour.usedPct, providerColor, stale));
       }
-      drawVitalsCard(4,   104, "RAM",  pu.weekly.usedPct,   pu.weekly.available,   false, providerColor, stale);
-      bool ssdAvail = (pu.extraPct != 0xFF);
-      drawVitalsCard(120, 104, "DISK", pu.extraPct,         ssdAvail,              false, providerColor, stale);
-      drawVitalsBanner(180, pu.batteryPct, pu.uptimeMin, stale);
+      drawVitalsCard(4,   104, "RAM",  view.weekly.usedPct,   view.weekly.available,   false, providerColor, stale);
+      bool ssdAvail = (view.extraPct != 0xFF);
+      drawVitalsCard(120, 104, "DISK", view.extraPct,         ssdAvail,                false, providerColor, stale);
+      drawVitalsBanner(180, view.batteryPct, view.uptimeMin, stale);
       lastFiveHourOk_[active_] = pu.lastOkMs;
-      lastStale_[active_]      = stale;
+      lastFresh_[active_]      = fresh;
     }
     return;
   }
@@ -480,20 +503,18 @@ void UsageMode::service(const Settings& s) {
       d->print(s.weather.city.length() ? s.weather.city.c_str() : "BKK");
       lastClockMin_ = 0xFF;
       lastFiveHourOk_[active_] = 0;
-      lastStale_[active_] = !stale;  // force pill update
+      lastFresh_[active_] = (Freshness)0xFF;  // sentinel: force pill + card update
     }
 
-    // Title pill: update when stale status changes.
-    if (stale != lastStale_[active_]) {
+    // Title pill: update when the freshness tier changes. NOTE: this block
+    // intentionally does NOT commit lastFresh_ — the weather-card block below
+    // owns that commit, so both the pill AND the card repaint on a tier
+    // transition (e.g. STALE→OFFLINE must both relabel the pill and hide the
+    // temp/icon). The card's condition re-checks the same tier delta.
+    if (fresh != lastFresh_[active_]) {
       auto* d = gfxDev();
-      d->fillRect(160, 6, 78, 24, USAGE_COLOR_CARD);
-      d->setTextSize(2);
-      const char* pill = stale ? "STALE" : "LIVE";
-      d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
-      int16_t tw = gfxTextW(pill, 2);
-      d->setCursor(232 - tw, 10);
-      d->print(pill);
-      lastStale_[active_] = stale;
+      d->fillRect(150, 6, 88, 24, USAGE_COLOR_CARD);   // wider to fit "OFFLINE"
+      drawFreshnessPill(fresh);
     }
 
     // Region 1: Time + date (repaint only when minute changes).
@@ -546,27 +567,36 @@ void UsageMode::service(const Settings& s) {
       lastClockMin_ = 0xFE;
     }
 
-    // Region 2: Weather card with icon (repaint when new push lands).
-    if (pu.lastOkMs != lastFiveHourOk_[active_]) {
+    // Region 2: Weather card with icon. Repaint when a new push lands OR the
+    // freshness tier changes (OFFLINE hides temp/condition/icon; recovery
+    // reveals them again). The device-local clock above is unaffected.
+    if (pu.lastOkMs != lastFiveHourOk_[active_] || fresh != lastFresh_[active_]) {
       auto* d = gfxDev();
       // Card: temp + condition + icon, no Hi/Lo.
       d->fillRoundRect(4, 148, 232, 70, 6, USAGE_COLOR_CARD);
-      // Icon (left, centered vertically in card).
-      if (pu.weatherCode != 0xFF)
-        drawWeatherIcon(36, 183, pu.weatherCode, providerColor);
+      // Icon (left, centered vertically in card). Hidden when OFFLINE.
+      if (view.weatherCode != 0xFF)
+        drawWeatherIcon(36, 183, view.weatherCode, providerColor);
       // Temp, right of icon.
-      d->setTextColor(providerColor);
       d->setTextSize(4);
-      char tb[8];
-      snprintf(tb, sizeof(tb), "%u", pu.fiveHour.usedPct);
-      d->setCursor(60, 154);
-      d->print(tb);
-      d->setTextSize(2);
-      d->print("C");
+      if (view.fiveHour.available) {
+        d->setTextColor(providerColor);
+        char tb[8];
+        snprintf(tb, sizeof(tb), "%u", view.fiveHour.usedPct);
+        d->setCursor(60, 154);
+        d->print(tb);
+        d->setTextSize(2);
+        d->print("C");
+      } else {
+        d->setTextColor(USAGE_COLOR_MUTED);
+        int16_t tw = gfxTextW("--", 4);
+        d->setCursor(60 + (60 - tw) / 2, 154);
+        d->print("--");
+      }
       // Condition label below temp.
       d->setTextColor(USAGE_COLOR_MUTED);
       d->setTextSize(2);
-      const char* cond = (pu.weatherCode != 0xFF) ? wmoLabel(pu.weatherCode) : "---";
+      const char* cond = (view.weatherCode != 0xFF) ? wmoLabel(view.weatherCode) : "---";
       d->setCursor(60, 184);
       d->print(cond);
       lastFiveHourOk_[active_] = pu.lastOkMs;
@@ -586,16 +616,10 @@ void UsageMode::service(const Settings& s) {
     d->setTextSize(3);
     d->setCursor(10, 8);
     d->print(usageProviderLabel(active_));
-    // LIVE / STALE pill (right).
-    d->setTextSize(2);
-    const char* pill = stale ? "STALE" : "LIVE";
-    d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
-    int16_t tw = gfxTextW(pill, 2);   // fallback: textWidth() unavailable in this GFX version
-    d->setCursor(232 - tw, 10);
-    d->print(pill);
-    // Cards.
-    drawCard(42,  "5H",     pu.fiveHour, providerColor, stale);
-    drawCard(124, "WEEKLY", pu.weekly,   providerColor, stale);
+    drawFreshnessPill(fresh);
+    // Cards. Pass the (offline-masked) view so OFFLINE shows N/A.
+    drawCard(42,  "5H",     view.fiveHour, providerColor, stale);
+    drawCard(124, "WEEKLY", view.weekly,   providerColor, stale);
     // Reset dirty trackers so subsequent partial updates redraw correctly.
     for (uint8_t i = 0; i < PROVIDER_COUNT; i++) {
       lastFiveHourOk_[i]  = g_usageStore.read((UsageProvider)i).fiveHour.available
@@ -603,14 +627,14 @@ void UsageMode::service(const Settings& s) {
       lastWeeklyOk_[i]    = g_usageStore.read((UsageProvider)i).weekly.available
                             ? g_usageStore.read((UsageProvider)i).lastOkMs : 0;
     }
-    lastFiveHourReset_[active_] = pu.fiveHour.resetMin;
-    lastWeeklyReset_[active_]   = pu.weekly.resetMin;
-    lastStale_[active_]         = stale;
+    lastFiveHourReset_[active_] = view.fiveHour.resetMin;
+    lastWeeklyReset_[active_]   = view.weekly.resetMin;
+    lastFresh_[active_]         = fresh;
     return;
   }
 
-  // Partial: status + cards only if lastOkMs changed or stale flipped.
-  bool dataChanged = (pu.lastOkMs != lastFiveHourOk_[active_]) || (stale != lastStale_[active_]);
+  // Partial: status + cards if lastOkMs changed or the freshness tier changed.
+  bool dataChanged = (pu.lastOkMs != lastFiveHourOk_[active_]) || (fresh != lastFresh_[active_]);
   if (dataChanged) {
     auto* d = gfxDev();
     // Repaint just the pill + cards region (y=8..198) over a fresh card bg.
@@ -621,28 +645,23 @@ void UsageMode::service(const Settings& s) {
     d->setTextSize(3);
     d->setCursor(10, 8);
     d->print(usageProviderLabel(active_));
-    d->setTextSize(2);
-    const char* pill = stale ? "STALE" : "LIVE";
-    d->setTextColor(stale ? USAGE_COLOR_STALE : USAGE_COLOR_TEXT);
-    int16_t tw = gfxTextW(pill, 2);   // fallback: textWidth() unavailable in this GFX version
-    d->setCursor(232 - tw, 10);
-    d->print(pill);
-    drawCard(42,  "5H",     pu.fiveHour, providerColor, stale);
-    drawCard(124, "WEEKLY", pu.weekly,   providerColor, stale);
+    drawFreshnessPill(fresh);
+    drawCard(42,  "5H",     view.fiveHour, providerColor, stale);
+    drawCard(124, "WEEKLY", view.weekly,   providerColor, stale);
     lastFiveHourOk_[active_] = pu.lastOkMs;
     lastWeeklyOk_[active_]   = pu.lastOkMs;
-    lastStale_[active_]      = stale;
+    lastFresh_[active_]      = fresh;
   }
 
   // Partial: reset countdown only when the minute value changed.
   // (Codex/z.ai push reset_min as minutes already; we redraw the card's reset
   // row when it changed since last paint. Cheap: just compare to last value.)
-  if (pu.fiveHour.resetMin != lastFiveHourReset_[active_] ||
-      pu.weekly.resetMin   != lastWeeklyReset_[active_]) {
+  if (view.fiveHour.resetMin != lastFiveHourReset_[active_] ||
+      view.weekly.resetMin   != lastWeeklyReset_[active_]) {
     // Redrawing the whole card is simplest given the small text region overlap;
     // it is bounded (74px tall) and only runs on a real change.
-    drawCard(42,  "5H",     pu.fiveHour, providerColor, stale);
-    drawCard(124, "WEEKLY", pu.weekly,   providerColor, stale);
+    drawCard(42,  "5H",     view.fiveHour, providerColor, stale);
+    drawCard(124, "WEEKLY", view.weekly,   providerColor, stale);
     lastFiveHourReset_[active_] = pu.fiveHour.resetMin;
     lastWeeklyReset_[active_]   = pu.weekly.resetMin;
   }

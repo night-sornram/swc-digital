@@ -19,6 +19,12 @@ enum UsageProvider : uint8_t {
   PROVIDER_COUNT  = 5,
 };
 
+// Freshness tiers, computed from ageMs():
+//   LIVE     age < USAGE_STALE_AFTER_MS         normal colors, values shown
+//   STALE    STALE_AFTER .. OFFLINE_AFTER       dimmed grey, values retained
+//   OFFLINE  age >= USAGE_OFFLINE_AFTER_MS      dimmed grey, values HIDDEN
+enum class Freshness : uint8_t { LIVE, STALE, OFFLINE };
+
 struct UsageWindow {
   bool     available;     // false => render "N/A"
   uint8_t  usedPct;       // 0..100 when available
@@ -54,7 +60,8 @@ class UsageStore {
   // Snapshot read for rendering. `providerTheme` returns the spec palette color.
   const ProviderUsage& read(UsageProvider p) const;
   uint32_t ageMs(UsageProvider p) const;        // millis() since lastOkMs; 0xFFFFFFFF if never
-  bool    stale(UsageProvider p) const;         // ageMs() > USAGE_STALE_AFTER_MS
+  bool    stale(UsageProvider p) const;         // true when not LIVE (STALE or OFFLINE)
+  Freshness freshness(UsageProvider p) const;   // 3-tier: LIVE / STALE / OFFLINE
   // Format the snapshot as the GET /api/usage JSON (all providers + age + stale).
   void    serializeOverview(String& out) const;
  private:

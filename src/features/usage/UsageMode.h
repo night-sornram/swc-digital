@@ -31,7 +31,7 @@ class UsageMode : public DisplayMode {
   uint32_t lastWeeklyOk_[PROVIDER_COUNT]    = {0};
   uint16_t lastFiveHourReset_[PROVIDER_COUNT] = {0xFFFF, 0xFFFF, 0xFFFF};
   uint16_t lastWeeklyReset_[PROVIDER_COUNT]   = {0xFFFF, 0xFFFF, 0xFFFF};
-  bool     lastStale_[PROVIDER_COUNT]         = {false, false, false};
+  Freshness lastFresh_[PROVIDER_COUNT]        = {Freshness::LIVE, Freshness::LIVE, Freshness::LIVE};
   // WEATHER-only dirty trackers (clock + calendar are device-local, not
   // pushed; they change on their own cadence).
   uint8_t  lastClockMin_  = 0xFF;   // last minute rendered (0..59)

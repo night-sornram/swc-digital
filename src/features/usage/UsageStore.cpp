@@ -195,7 +195,15 @@ uint32_t UsageStore::ageMs(UsageProvider p) const {
 }
 
 bool UsageStore::stale(UsageProvider p) const {
-  return ageMs(p) > USAGE_STALE_AFTER_MS;
+  return freshness(p) != Freshness::LIVE;   // STALE or OFFLINE
+}
+
+Freshness UsageStore::freshness(UsageProvider p) const {
+  uint32_t age = ageMs(p);
+  if (age == 0xFFFFFFFFUL) return Freshness::OFFLINE;  // never received
+  if (age > USAGE_OFFLINE_AFTER_MS) return Freshness::OFFLINE;
+  if (age > USAGE_STALE_AFTER_MS)   return Freshness::STALE;
+  return Freshness::LIVE;
 }
 
 void UsageStore::serializeOverview(String& out) const {
@@ -211,6 +219,7 @@ void UsageStore::serializeOverview(String& out) const {
     uint32_t age = ageMs((UsageProvider)i);
     po["age_sec"] = (age == 0xFFFFFFFFUL) ? -1 : (int32_t)(age / 1000UL);
     po["stale"]   = stale((UsageProvider)i);
+    po["offline"] = (freshness((UsageProvider)i) == Freshness::OFFLINE);
     JsonObject five = po["five_hour"].to<JsonObject>();
     if (data_[i].fiveHour.available) {
       five["used_pct"]   = data_[i].fiveHour.usedPct;

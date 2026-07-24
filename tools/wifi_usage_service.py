@@ -5,6 +5,9 @@ Subcommands:
   pair     Generate a pairkey, store it in Keychain, POST it to the device.
   run      Daemon: poll providers + push to the paired device every 60s.
   recover  Re-pair over a Setup AP after Wi-Fi change or lost key.
+  install  Register the LaunchAgent so the service auto-starts at login and
+           survives reboots. Writes the plist with correct absolute paths,
+           loads it, and verifies the job is running. Idempotent.
 
 Legacy compat: calling with NO subcommand runs `run` (so the existing
 LaunchAgent plist keeps working until the user updates it).
@@ -116,6 +119,164 @@ def _write_device_id_to_config(device_id: str) -> None:
         out.append("[device]")
         out.append(f'id = "{device_id}"')
     cfg_path.write_text("\n".join(out) + "\n")
+
+
+# ---- install (register the LaunchAgent) ------------------------------------
+
+LABEL = "com.night.swc-digital-wifi-usage"
+
+
+def _resolve_uv() -> str:
+    """Find the uv binary. Prefer `which uv`, fall back to common paths."""
+    import shutil
+    found = shutil.which("uv")
+    if found:
+        return found
+    for candidate in ("/opt/homebrew/bin/uv", "/usr/local/bin/uv",
+                      os.path.expanduser("~/.local/bin/uv")):
+        if os.path.exists(candidate):
+            return candidate
+    raise RuntimeError(
+        "uv not found on PATH or in common locations. "
+        "Install uv (https://docs.astral.sh/uv/) or pass --uv-bin.")
+
+
+def _plist_contents(uv_bin: str, script: str, config: str, log_path: str) -> str:
+    """The LaunchAgent plist body. Keep RunAtLoad + KeepAlive so the service
+    starts at login and auto-restarts if the process ever crashes."""
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{uv_bin}</string>
+    <string>run</string>
+    <string>--python</string>
+    <string>3.11</string>
+    <string>--with</string>
+    <string>zeroconf</string>
+    <string>--with</string>
+    <string>psutil</string>
+    <string>{script}</string>
+    <string>run</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>WIFI_USAGE_CONFIG</key>
+    <string>{config}</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>{log_path}</string>
+  <key>StandardErrorPath</key>
+  <string>{log_path}</string>
+</dict>
+</plist>
+"""
+
+
+def cmd_install(args) -> int:
+    """Register the LaunchAgent: write the plist, load it, verify."""
+    import subprocess
+    repo = Path(__file__).resolve().parent
+    config = Path(os.environ.get("WIFI_USAGE_CONFIG", repo / "wifi-usage.toml"))
+    script = repo / "wifi_usage_service.py"
+    uv_bin = args.uv_bin or _resolve_uv()
+    plist_path = Path("~/Library/LaunchAgents").expanduser() / f"{LABEL}.plist"
+    log_path = Path("~/Library/Logs/swc-digital-wifi-usage.log").expanduser()
+
+    if not config.exists():
+        print(f"install: config not found at {config}", file=sys.stderr)
+        print("hint: copy tools/wifi-usage.toml.example and fill it in, "
+              "or run `pair` first (it writes the device id).", file=sys.stderr)
+        return 2
+
+    # Sanity: is this Mac actually paired with a device? `run` would spin
+    # harmlessly without one, but it's friendlier to tell the user now.
+    dev_id = _read_device_id(config)
+    if not dev_id:
+        print("install: no [device] id in config — the service will start but "
+              "has nothing to push to.", file=sys.stderr)
+        print("hint: run `wifi_usage_service.py pair --url <device-url>` first.",
+              file=sys.stderr)
+    else:
+        try:
+            import device_client as dc
+            dc.keychain_get(dev_id)   # raises if missing
+        except Exception:
+            print(f"install: device {dev_id} is in config but no pairkey is in "
+                  f"Keychain. Run `pair --url <device-url>` first.", file=sys.stderr)
+            return 2
+
+    plist_dir = plist_path.parent
+    plist_dir.mkdir(parents=True, exist_ok=True)
+
+    # Unload any existing job first so the reload is clean (idempotent).
+    subprocess.run(["launchctl", "unload", str(plist_path)],
+                   capture_output=True)
+    plist_path.write_text(_plist_contents(uv_bin, str(script),
+                                          str(config), str(log_path)))
+    print(f"wrote {plist_path}")
+
+    res = subprocess.run(["launchctl", "load", str(plist_path)],
+                         capture_output=True, text=True)
+    if res.returncode != 0:
+        print(f"install: launchctl load failed:\n{res.stderr}", file=sys.stderr)
+        return 2
+
+    # Verify the job landed and is running.
+    import time as _t
+    _t.sleep(1.5)
+    lst = subprocess.run(["launchctl", "list"], capture_output=True, text=True)
+    line = next((l for l in lst.stdout.splitlines() if LABEL in l), None)
+    if not line:
+        print("install: job not found in launchctl list after load.",
+              file=sys.stderr)
+        return 2
+    # Columns: PID  Status  Label. PID != "-" means running.
+    parts = line.split()
+    pid = parts[0] if parts else "-"
+    print(f"registered: {LABEL}")
+    print(f"  status: {'running (pid ' + pid + ')' if pid != '-' else 'loaded (will start momentarily)'}")
+    print(f"  config: {config}")
+    print(f"  log:    {log_path}")
+    print(f"  uv:     {uv_bin}")
+    print()
+    print("Done. The service auto-starts at login and restarts if it crashes.")
+    print(f"Tail logs: tail -f {log_path}")
+    return 0
+
+
+def _read_device_id(config: Path) -> Optional[str]:
+    """Read [device] id from the config without requiring all deps."""
+    try:
+        with open(config, "rb") as f:
+            cfg = tomllib.load(f)
+        return (cfg.get("device", {}) or {}).get("id")
+    except Exception:
+        return None
+
+
+def cmd_uninstall(args) -> int:
+    """Stop the service and remove the LaunchAgent plist."""
+    import subprocess
+    plist_path = Path("~/Library/LaunchAgents").expanduser() / f"{LABEL}.plist"
+    if plist_path.exists():
+        subprocess.run(["launchctl", "unload", str(plist_path)],
+                       capture_output=True)
+        plist_path.unlink()
+        print(f"removed {plist_path}")
+    else:
+        print(f"uninstall: no plist at {plist_path} (nothing to remove)")
+    print(f"stopped {LABEL}. Re-run `install` to start again.")
+    return 0
 
 
 # ---- run (the existing main loop) ------------------------------------------
@@ -242,10 +403,14 @@ def cmd_run(args) -> int:
 
 def _step_provider(state, targets, interval_s, opener_for, expected_id) -> None:
     if state.backoff_min > 0:
-        sleep_s = state.backoff_min * 60
+        # Non-blocking backoff: skip this provider for the cycle but do NOT
+        # sleep — that would stall the whole loop and starve every other
+        # provider (one codex backoff must not freeze system/vitals/zai).
+        # `backoff_min` here counts skipped cycles, not wall-clock minutes;
+        # the name is kept for log-line continuity with prior versions.
         log.info("event=backoff provider=%s minutes=%d", state.name, state.backoff_min)
-        state.backoff_min = min(state.backoff_min * 2 if state.backoff_min >= 2 else 2, 15)
-        time.sleep(sleep_s); return
+        state.backoff_min -= 1
+        return
     try:
         windows = state.fetch()
     except Exception as exc:
@@ -297,6 +462,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     p_rec = sub.add_parser("recover", help="re-pair over a Setup AP after Wi-Fi change")
     p_rec.add_argument("--url", required=True, help="device AP URL, e.g. http://192.168.4.1")
     p_rec.set_defaults(func=cmd_recover)
+
+    p_inst = sub.add_parser("install",
+                            help="register the LaunchAgent (auto-start at login, "
+                                 "survive reboots). Idempotent.")
+    p_inst.add_argument("--uv-bin", help="path to uv binary (default: auto-detect)")
+    p_inst.set_defaults(func=cmd_install)
+
+    p_uninst = sub.add_parser("uninstall", help="stop the service and remove the LaunchAgent")
+    p_uninst.set_defaults(func=cmd_uninstall)
 
     args = p.parse_args(argv)
     if not args.cmd:

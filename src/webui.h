@@ -410,7 +410,7 @@ function loadUsageOverview(){
    $(pre+'-wk').textContent=w.used_pct!=null?w.used_pct+'%':'N/A';
    $(pre+'-wk-reset').textContent='RESET '+(fmtM(w.reset_min)||'--');
    $(pre+'-age').textContent=ageS;
-   $(pre+'-state').textContent=p.stale?'STALE':'LIVE';
+   $(pre+'-state').textContent=p.offline?'OFFLINE':(p.stale?'STALE':'LIVE');
   }
   fill('codex',byName('codex'));
   fill('zai',byName('zai'));

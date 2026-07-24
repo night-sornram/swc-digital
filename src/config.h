@@ -66,6 +66,7 @@ enum UiMode : uint8_t {
 // Usage display (3.0.0)
 // ---------------------------------------------------------------------------
 #define USAGE_STALE_AFTER_MS    180000UL   // mark STALE after 180 s without a push
+#define USAGE_OFFLINE_AFTER_MS  300000UL   // hide data (OFFLINE) after 300 s without a push
 #define USAGE_AUTOROTATE_SEC    30         // AUTO: dwell on each provider
 #define USAGE_AUTOROTATE_MIN    2
 #define USAGE_AUTOROTATE_MAX    3600
