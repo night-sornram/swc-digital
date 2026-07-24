@@ -506,11 +506,12 @@ void UsageMode::service(const Settings& s) {
       lastFresh_[active_] = (Freshness)0xFF;  // sentinel: force pill + card update
     }
 
-    // Title pill: update when the freshness tier changes. NOTE: this block
-    // intentionally does NOT commit lastFresh_ — the weather-card block below
-    // owns that commit, so both the pill AND the card repaint on a tier
-    // transition (e.g. STALE→OFFLINE must both relabel the pill and hide the
-    // temp/icon). The card's condition re-checks the same tier delta.
+    // Title pill: update when the freshness tier changes. This block does NOT
+    // commit lastFresh_ — the weather-card block (Region 2) owns that commit so
+    // both the pill AND the card repaint on a tier transition in the same tick
+    // (e.g. STALE→OFFLINE must relabel the pill AND hide the temp/icon). The
+    // card's condition re-checks the same delta, then commits it, consuming the
+    // change so neither block redraws again on subsequent ticks (no blink).
     if (fresh != lastFresh_[active_]) {
       auto* d = gfxDev();
       d->fillRect(150, 6, 88, 24, USAGE_COLOR_CARD);   // wider to fit "OFFLINE"
@@ -600,6 +601,7 @@ void UsageMode::service(const Settings& s) {
       d->setCursor(60, 184);
       d->print(cond);
       lastFiveHourOk_[active_] = pu.lastOkMs;
+      lastFresh_[active_]      = fresh;   // consume tier delta (pill + card both drawn this tick)
     }
 
     return;
